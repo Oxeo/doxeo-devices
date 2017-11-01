@@ -43,7 +43,7 @@ void setup() {
   MyNrf24l::init();
 
   Serial.begin(9600);
-  timer.every(60000, takeTemperature);
+  timer.every(600000, takeTemperature);
 
   timer.pulseImmediate(PIN_BUZZER, 100, HIGH);
 }
@@ -70,9 +70,9 @@ void loop() {
     } else if (commandType == "rf") {
       mySwitch.send(getValue(command).toInt(), 24);
       Serial.println(command);
-    } else if (commandType == "temperature" && commandName == "box") {
+    } else if (commandType == "box" && commandName == "temperature") {
       takeTemperature();
-    } else if (commandType == "buzzer" && commandName == "box") {
+    } else if (commandType == "box" && commandName == "buzzer") {
       timer.pulseImmediate(PIN_BUZZER, getValue(command).toInt(), HIGH);
       Serial.println(command);
     } else if (commandType == "device_name") {
@@ -137,7 +137,7 @@ void resetTemponRf() {
 
 void takeTemperature() {
   sensors.requestTemperatures();  
-  send("temperature", "box", sensors.getTempCByIndex(0));
+  send("box", "temperature", sensors.getTempCByIndex(0));
 }
 
 void send(String type, String name, String value) {
