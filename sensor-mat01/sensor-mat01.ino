@@ -5,6 +5,9 @@
 #include <LowPower.h>
 #include <DoxeoConfig.h>
 
+#define PIN_WAKEUP 2
+#define PIN_ALIM 4
+
  /* 
   *  Pins:
   * Hardware SPI:
@@ -17,8 +20,7 @@
   * CSN -> 10
   */
 
-const int wakeUpPin = 2;
-int cpt = 0;
+byte data[32];
 
 void setup() {
   // Configure NRF communication
@@ -33,54 +35,47 @@ void setup() {
   Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
   Mirf.setRADDR((byte *) DOXEO_ADDR_MAT01); // Adresse de réception
 
-  // Configure wake up pin as input.
-  // This will consumes few uA of current.
-  pinMode(wakeUpPin, INPUT);
+  pinMode(PIN_WAKEUP, INPUT);
+  pinMode(PIN_ALIM, OUTPUT);
 
-  // Send init data
-  byte data[32];
-  String message = "doormat;init";
-  message.getBytes(data, 32);
-  Mirf.send(data); // On envoie le data
-  while (Mirf.isSending());
-  cpt = 0;
+  digitalWrite(PIN_ALIM, HIGH);
+
+  sendStatus("init");
 }
 
 void wakeUp()
 {
-  cpt = 0;
+
 }
 
 void loop() {
   // Allow wake up pin to trigger interrupt on change.
-  attachInterrupt(digitalPinToInterrupt(wakeUpPin), wakeUp, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_WAKEUP), wakeUp, CHANGE);
+  LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+  detachInterrupt(digitalPinToInterrupt(PIN_WAKEUP));
+  digitalWrite(PIN_ALIM, LOW);
 
-  // Enter power down state with ADC and BOD module disabled.
-  // Wake up when wake up pin is low.
-  if (cpt >= 5) {
-    LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-  } else {
-    LowPower.powerDown(SLEEP_120MS, ADC_OFF, BOD_OFF);
-  }
+  sendStatus("on");
 
-  // Disable external pin interrupt on wake up pin.
-  detachInterrupt(digitalPinToInterrupt(wakeUpPin));
+  do {
+    digitalWrite(PIN_ALIM, LOW);
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+    digitalWrite(PIN_ALIM, HIGH);
+    LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
+  } while (digitalRead(PIN_WAKEUP) == HIGH);
 
-  // Send data
-  byte data[32];
-  String message = "doormat;";
+  sendStatus("off");
+}
 
-  if (digitalRead(wakeUpPin) == HIGH) {
-    message += "on";
-  } else {
-    message += "off";
-  }
-
+void sendStatus(String state) {
+  String message = "doormat;" + state;
   message.getBytes(data, 32);
-  Mirf.send(data); // On envoie le data
-  while (Mirf.isSending());
 
-  cpt++;
+  for (int i=0; i<5; ++i) {
+    Mirf.send(data);
+    while (Mirf.isSending());
+    LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
+  }
 
   // power down NRF to save energy
   Mirf.powerDown();
