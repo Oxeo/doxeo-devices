@@ -50,7 +50,7 @@ void wakeUp()
 
 void loop() {
   // Allow wake up pin to trigger interrupt on change.
-  attachInterrupt(digitalPinToInterrupt(PIN_WAKEUP), wakeUp, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_WAKEUP), wakeUp, HIGH);
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
   detachInterrupt(digitalPinToInterrupt(PIN_WAKEUP));
   digitalWrite(PIN_ALIM, LOW);
@@ -61,7 +61,6 @@ void loop() {
     digitalWrite(PIN_ALIM, LOW);
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
     digitalWrite(PIN_ALIM, HIGH);
-    LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
   } while (digitalRead(PIN_WAKEUP) == HIGH);
 
   sendStatus("off");
@@ -74,7 +73,7 @@ void sendStatus(String state) {
   for (int i=0; i<5; ++i) {
     Mirf.send(data);
     while (Mirf.isSending());
-    LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
+    LowPower.powerDown(SLEEP_60MS, ADC_OFF, BOD_OFF);
   }
 
   // power down NRF to save energy
