@@ -45,12 +45,8 @@ void setup() {
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
   Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
 
-  // Send init data
-  String message = "temperature1;init";
-  message.getBytes(data, 32);
-  Mirf.send(data);
-  while (Mirf.isSending());
-  Mirf.powerDown();
+  // Send init message
+  sendMessage("init");
 
   // configure temperature sensor
   pinMode(PIN_ALIM_TEMPERATURE, OUTPUT);
@@ -61,31 +57,29 @@ void setup() {
   int numSensors=sensors.getDeviceCount();
   oneWire.search(tempAddress);
   sensors.setResolution(tempAddress, TEMPERATURE_PRECISION);
+  digitalWrite(PIN_ALIM_TEMPERATURE, LOW);
+  pinMode(PIN_ALIM_TEMPERATURE, INPUT); // set power pin for DS18B20 to input before sleeping, saves power 
 
   cpt = 0;
+
+  sendMessage("init_done");
 }
 
 void loop() {
   if (cpt % 75 == 0) {
     // take temperature
-    pinMode(PIN_ALIM_TEMPERATURE, OUTPUT); // set power pin for DS18B20 to output  
+    pinMode(PIN_ALIM_TEMPERATURE, OUTPUT);
     digitalWrite(PIN_ALIM_TEMPERATURE, HIGH);
     LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
     sensors.setResolution(tempAddress, TEMPERATURE_PRECISION); 
     sensors.requestTemperatures(); // Send the command to get temperatures  
     LowPower.powerDown(SLEEP_500MS, ADC_OFF, BOD_OFF); // 9bit requres 95ms, 10bit 187ms, 11bit 375ms and 12bit resolution takes 750ms
-    String message = "temperature1;";
-    message += sensors.getTempC(tempAddress);
+    String temp = String(sensors.getTempC(tempAddress), 2);
     digitalWrite(PIN_ALIM_TEMPERATURE, LOW); // turn DS18B20 sensor off
     pinMode(PIN_ALIM_TEMPERATURE, INPUT); // set power pin for DS18B20 to input before sleeping, saves power 
 
     // send
-    message.getBytes(data, 32);
-    Mirf.send(data);
-    while (Mirf.isSending());
-    
-    // power down NRF to save energy
-    Mirf.powerDown();
+    sendMessage(temp);
   }
 
   // sleep 8 secondes
@@ -93,4 +87,11 @@ void loop() {
   cpt++;
 }
 
+void sendMessage(String msg) {
+  String message = "temperature1;" + msg;
+  message.getBytes(data, 32);
+  Mirf.send(data);
+  while (Mirf.isSending());
+  Mirf.powerDown(); // power down NRF to save energy
+}
 
