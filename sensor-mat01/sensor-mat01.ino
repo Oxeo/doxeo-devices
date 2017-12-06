@@ -53,18 +53,20 @@ void loop() {
   attachInterrupt(digitalPinToInterrupt(PIN_WAKEUP), wakeUp, CHANGE);
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
   detachInterrupt(digitalPinToInterrupt(PIN_WAKEUP));
-  digitalWrite(PIN_ALIM, LOW);
 
-  sendStatus("on");
-
-  do {
+  if (digitalRead(PIN_WAKEUP) == HIGH) {
     digitalWrite(PIN_ALIM, LOW);
-    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-    digitalWrite(PIN_ALIM, HIGH);
-    LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
-  } while (digitalRead(PIN_WAKEUP) == HIGH);
+    sendStatus("on");
 
-  sendStatus("off");
+    do {
+      digitalWrite(PIN_ALIM, LOW);
+      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+      digitalWrite(PIN_ALIM, HIGH);
+      LowPower.powerDown(SLEEP_30MS, ADC_OFF, BOD_OFF);
+    } while (digitalRead(PIN_WAKEUP) == HIGH);
+  
+    sendStatus("off");
+  }
 }
 
 void sendStatus(String state) {
