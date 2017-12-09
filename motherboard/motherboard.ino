@@ -4,7 +4,12 @@
 #include <DallasTemperature.h>
 #include <Timer.h>
 #include <Mirf.h>
-#include "Nrf24l.h"
+
+#include <SPI.h>      // Pour la communication via le port SPI
+#include <Mirf.h>     // Pour la gestion de la communication
+#include <nRF24L01.h> // Pour les définitions des registres du nRF24L01
+#include <MirfHardwareSpiDriver.h> // Pour la communication SPI (ne cherchez pas à comprendre)
+#include <DoxeoConfig.h>
 
 #define PIN_LED_YELLOW 5
 #define PIN_LED_RED 8
@@ -40,13 +45,26 @@ void setup() {
   dio.setReceiverPin(PIN_RF_RECEIVER);
   dio.setSenderPin(PIN_RF_TRANSMITTER);
 
-  MyNrf24l::init();
+  // NRF init
+  Mirf.cePin = 9; // Broche CE sur D9
+  Mirf.csnPin = 10; // Broche CSN sur D10
+  Mirf.spi = &MirfHardwareSpi; // On veut utiliser le port SPI hardware
+  Mirf.init(); // Initialise la bibliothèque
+  Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
+  Mirf.payload = 32; // Taille d'un message (maximum 32 octets)
+  Mirf.config(); // Sauvegarde la configuration dans le module radio
+  Mirf.configRegister(RF_SETUP, 0x26); // to send much longeur
+  Mirf.setRADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de réception
 
   Serial.begin(9600);
+
+  sensors.begin();
   timer.every(600000, takeTemperature);
 
   timer.pulseImmediate(PIN_BUZZER, 100, HIGH);
 }
+
+byte nrfData[32];
 
 void loop() {
   
@@ -57,13 +75,13 @@ void loop() {
     String commandName = getName(command);
     
     if (commandType == "nrf") {
-      byte data[32];
+      getValue(command).getBytes(nrfData, 32);
       byte addressDestination[6];
-      getValue(command).getBytes(data, 32);
       commandName.getBytes(addressDestination, 6); // address on 5 charact
-      Mirf.setTADDR(addressDestination);
-      Mirf.send(data);
+      Mirf.setTADDR(addressDestination); // Adresse de transmission
+      Mirf.send(nrfData);
       while(Mirf.isSending());
+      Serial.println("nrf command " + command + " send with success");
     } else if (commandType == "dio") {
       dio.send(getValue(command).toInt());
       Serial.println(command);
@@ -136,7 +154,7 @@ void resetTemponRf() {
 }
 
 void takeTemperature() {
-  sensors.requestTemperatures();  
+  sensors.requestTemperatures();
   send("box", "temperature", sensors.getTempCByIndex(0));
 }
 
