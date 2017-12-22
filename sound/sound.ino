@@ -12,129 +12,137 @@
 
 #define DFPLAYER_RX_PIN 7
 #define DFPLAYER_TX_PIN 8
-#define POWER_DFPLAYER 6
 #define POWER_AMPLIFIER 5
 #define NRF_INTERRUPT 2
 
+// DF Player
 SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
 
- /* 
-  *  Pins:
-  * Hardware SPI:
-  * MISO -> 12
-  * MOSI -> 11
-  * SCK -> 13
-  *
-  * Configurable:
-  * CE -> 9
-  * CSN -> 10
-  */
+// Timer
+int timer = 0;
 
-byte data[32];
-int cpt = 0;
+// Token ID
+unsigned long tokenId = 0;
+unsigned long tokenIdTime = 0;
 
 void setup() {
-  pinMode(POWER_DFPLAYER, OUTPUT);
+  // init PIN
   pinMode(POWER_AMPLIFIER, OUTPUT);
-  digitalWrite(POWER_DFPLAYER, HIGH);  // HIGH = ON
   digitalWrite(POWER_AMPLIFIER, LOW); // HIGH = OFF
   
-#ifdef DEBUG
-  Serial.begin(9600);
-#endif
+  // init serial for debugging
+  #ifdef DEBUG
+    Serial.begin(9600);
+  #endif
 
-  // Configure NRF communication
-//  Mirf.cePin = 9; // Broche CE sur D9
-//  Mirf.csnPin = 10; // Broche CSN sur D10
-//  Mirf.spi = &MirfHardwareSpi; // On veut utiliser le port SPI hardware
-//  Mirf.init(); // Initialise la bibliothèque
-//  Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
-//  //Mirf.setRADDR((byte *) "nrf01"); // Adresse de réception
-//  Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
-//  Mirf.config(); // Sauvegarde la configuration dans le module radio
-//  Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
-//  Mirf.setRADDR((byte *) "soun1"); // Adresse de réception
-//  Mirf.setTADDR((byte *) "oxeo2"); // Adresse de transmission
+  // init NRF
+  Mirf.cePin = 9; // PIN CE sur D9
+  Mirf.csnPin = 10; // PIN CSN sur D10
+  Mirf.spi = &MirfHardwareSpi; // Hardware SPI: MISO -> 12, MOSI -> 11, SCK -> 13
+  Mirf.init(); // Initialise la bibliothèque
+  Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
+  Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
+  Mirf.config(); // Sauvegarde la configuration dans le module radio
+  Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
+  Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND); // Adresse de réception
+  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
 
   sendMessage("init started");
-  DEBUG_PRINT("init started");
-  delay(100);
-  sendMessage("init started2");
 
-  // Configure DFPlayer
-  
-  sendMessage("init started3");
-  delay(100);
-  sendMessage("init started4");
-  delay(1000);
+  // init DFPlayer
   initDfPlayer();
-  delay(1000);
+  
+  // play sound
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
-  cpt = 100;
 
   sendMessage("init done");
-  DEBUG_PRINT("init done");
 }
 
 
 void loop() {  
-  // NRF reception
-  if (false){//Mirf.dataReady()) {
-    DEBUG_PRINT("dataReady");
-    byte nrfMessage[32];
-    Mirf.getData(nrfMessage);
-    String message = (char*) nrfMessage;
-    DEBUG_PRINT("message received:" + message);
-    sendMessage("success");
+  // message received
+  if (Mirf.dataReady()) {
+    // read message
+    byte byteMessage[32];
+    Mirf.getData(byteMessage);
+    String msg = String((char*) byteMessage);
+    DEBUG_PRINT("message received:" + msg);
 
-    String folder = parseMsg(message, "-", 0);
-    String sound = parseMsg(message, "-", 1);
+    // parse message
+    String receptorName = parseMsg(msg, ";", 0);
+    int id = parseMsg(msg, ";", 1).toInt();
+    String message = parseMsg(msg, ";", 2);
+    int folder = parseMsg(message, "-", 0).toInt();
+    int sound = parseMsg(message, "-", 1).toInt();
+    int volume = parseMsg(message, "-", 2).toInt();
+    
+    // display message for debug
+    DEBUG_PRINT("receptorName: " + receptorName);
+    DEBUG_PRINT("id: " + id);
+    DEBUG_PRINT("folder: " + folder);
+    DEBUG_PRINT("sound: " + sound);
+    DEBUG_PRINT("volume: " + volume);
 
-    if (cpt < 1) {
-      digitalWrite(POWER_DFPLAYER, HIGH);
-      digitalWrite(POWER_AMPLIFIER, LOW);
-      delay(1000);
-      initDfPlayer();
-      //dfPlayer.playFolder(folder.toInt(), sound.toInt());
-      delay(1000);
-      DEBUG_PRINT("play");
-      dfPlayer.volume(15);
-      dfPlayer.play(1);
-      cpt = 10;
-    }
-  } else {    
-    if (cpt < 1) {
-      dfPlayer.stop();
-      delay(1000);
-      digitalWrite(POWER_DFPLAYER, LOW);
-      digitalWrite(POWER_AMPLIFIER, HIGH);
-      //attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
-      LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-      //detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+    // handle message
+    if (receptorName != DOXEO_ADDR_SOUND) {
+      // do nothing, the message is not for us
+    } else if (id == tokenId && (millis() - tokenIdTime < 60000)) {
+      // already done, send success in case the previous message was not received
+      sendMessage(id + ";success");
+    } else if (id == 0) {
+      sendMessage("missing ID (NAME;ID;folder-sound-volume)");
+    } else if (folder < 1 || folder > 99) {
+      sendMessage(id + ";folder parameter error (NAME;ID;folder-sound-volume)!");
+    } else if (sound < 1 || sound > 999) {
+      sendMessage(id + ";sound parameter error (NAME;ID;folder-sound-volume)!");
+    } else if (volume < 1 || volume > 30) {
+      sendMessage(id + ";volume parameter error (NAME;ID;folder-sound-volume)!");
     } else {
-      DEBUG_PRINT("sleep");
-      //LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-      delay(1000);
-      sendMessage("sleep");
-      cpt--;
+      // play sound
+      digitalWrite(POWER_AMPLIFIER, LOW);
+      dfPlayer.volume(volume);
+      dfPlayer.playFolder(folder, sound);
+      timer = 60*3;  // set active during 3 minutes
+      
+      // send success message to the emitter
+      sendMessage(id + ";success");
+      tokenId = id;
+      tokenIdTime = millis();
+    }
+  } else {
+    // Sleep when timer elapsed
+    if (timer < 1) {
+      dfPlayer.stop();
+      dfPlayer.sleep(); 
+      digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
+      DEBUG_PRINT("DF player stopped");
+      attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, CHANGE);
+      LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+      detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+    } else {
+      #ifdef DEBUG
+        delay(1000);
+      #else
+        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+      #endif
+      
+      timer--;
     }
   }
 
-#ifdef DEBUG
- // if (dfPlayer.available()) {
-   // printDfPlayerDetail(dfPlayer.readType(), dfPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
-  //}
-#endif
+  #ifdef DEBUG
+    if (dfPlayer.available()) {
+      printDfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+    }
+  #endif
 }
 
 void initDfPlayer() {
   dfPlayerSerial.begin(9600);
 
-#ifdef DEBUG
-  Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
-#endif
+  sendMessage("Initializing DFPlayer ... (May take 3~5 seconds)");
 
   if (!dfPlayer.begin(dfPlayerSerial)) {  //Use softwareSerial to communicate with mp3.
     Serial.println(F("Unable to begin:"));
@@ -143,16 +151,16 @@ void initDfPlayer() {
     sendMessage("Unable to initialize DFPlayer Mini, check the SD card!");
   }
 
-#ifdef DEBUG
-  Serial.println(F("DFPlayer Mini online."));
-#endif
+  sendMessage("DFPlayer Mini online");
 }
 
 void sendMessage(String msg) {
-//  String message = "sound;" + msg;
-//  message.getBytes(data, 32);
-//    Mirf.send(data);
-//    while (Mirf.isSending());
+  String message = String(DOXEO_ADDR_SOUND) + ";" + msg;
+  DEBUG_PRINT("send message: " + message);
+  byte data[32];
+  message.getBytes(data, 32);
+  Mirf.send(data);
+  while (Mirf.isSending());
 }
 
 String parseMsg(String data, char separator, int index)
@@ -170,11 +178,6 @@ String parseMsg(String data, char separator, int index)
   }
 
   return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
-
-void wakeUp()
-{
-
 }
 
 void printDfPlayerDetail(uint8_t type, int value) {
@@ -232,3 +235,7 @@ void printDfPlayerDetail(uint8_t type, int value) {
   }
 }
 
+void wakeUp()
+{
+  // do nothing
+}
