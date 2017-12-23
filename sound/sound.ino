@@ -10,8 +10,8 @@
 #define DEBUG
 #include "DebugUtils.h"
 
-#define DFPLAYER_RX_PIN 7
-#define DFPLAYER_TX_PIN 8
+#define DFPLAYER_RX_PIN 8
+#define DFPLAYER_TX_PIN 7
 #define POWER_AMPLIFIER 5
 #define NRF_INTERRUPT 2
 
@@ -56,6 +56,7 @@ void setup() {
   // play sound
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
+  timer = 5000;
 
   sendMessage("init done");
 }
@@ -71,34 +72,34 @@ void loop() {
     DEBUG_PRINT("message received:" + msg);
 
     // parse message
-    String receptorName = parseMsg(msg, ";", 0);
-    int id = parseMsg(msg, ";", 1).toInt();
-    String message = parseMsg(msg, ";", 2);
-    int folder = parseMsg(message, "-", 0).toInt();
-    int sound = parseMsg(message, "-", 1).toInt();
-    int volume = parseMsg(message, "-", 2).toInt();
+    String receptorName = parseMsg(msg,';', 0);
+    int id = parseMsg(msg, ';', 1).toInt();
+    String message = parseMsg(msg, ';', 2);
+    int folder = parseMsg(message, '-', 0).toInt();
+    int sound = parseMsg(message, '-', 1).toInt();
+    int volume = parseMsg(message, '-', 2).toInt();
     
     // display message for debug
-    DEBUG_PRINT("receptorName: " + receptorName);
-    DEBUG_PRINT("id: " + id);
-    DEBUG_PRINT("folder: " + folder);
-    DEBUG_PRINT("sound: " + sound);
-    DEBUG_PRINT("volume: " + volume);
+    //DEBUG_PRINT("receptorName: " + receptorName);
+    //DEBUG_PRINT("id: " + String(id));
+    //DEBUG_PRINT("folder: " + String(folder));
+    //DEBUG_PRINT("sound: " + String(sound));
+    //DEBUG_PRINT("volume: " + String(volume));
 
     // handle message
     if (receptorName != DOXEO_ADDR_SOUND) {
       // do nothing, the message is not for us
     } else if (id == tokenId && (millis() - tokenIdTime < 60000)) {
       // already done, send success in case the previous message was not received
-      sendMessage(id + ";success");
+      sendMessage(String(id) + ";success");
     } else if (id == 0) {
       sendMessage("missing ID (NAME;ID;folder-sound-volume)");
     } else if (folder < 1 || folder > 99) {
-      sendMessage(id + ";folder parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";folder parameter error (NAME;ID;folder-sound-volume)!");
     } else if (sound < 1 || sound > 999) {
-      sendMessage(id + ";sound parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";sound parameter error (NAME;ID;folder-sound-volume)!");
     } else if (volume < 1 || volume > 30) {
-      sendMessage(id + ";volume parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";volume parameter error (NAME;ID;folder-sound-volume)!");
     } else {
       // play sound
       digitalWrite(POWER_AMPLIFIER, LOW);
@@ -107,7 +108,7 @@ void loop() {
       timer = 60*3;  // set active during 3 minutes
       
       // send success message to the emitter
-      sendMessage(id + ";success");
+      sendMessage(String(id) + ";success");
       tokenId = id;
       tokenIdTime = millis();
     }
@@ -115,12 +116,13 @@ void loop() {
     // Sleep when timer elapsed
     if (timer < 1) {
       dfPlayer.stop();
-      dfPlayer.sleep(); 
+      //dfPlayer.sleep(); 
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
-      DEBUG_PRINT("DF player stopped");
+      DEBUG_PRINT("LONG SLEEP");
       attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, CHANGE);
       LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
       detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+      DEBUG_PRINT("WAKEUP");
     } else {
       #ifdef DEBUG
         delay(1000);
@@ -155,7 +157,7 @@ void initDfPlayer() {
 }
 
 void sendMessage(String msg) {
-  String message = String(DOXEO_ADDR_SOUND) + ";" + msg;
+  String message = String(DOXEO_ADDR_SOUND) + ';' + msg;
   DEBUG_PRINT("send message: " + message);
   byte data[32];
   message.getBytes(data, 32);
