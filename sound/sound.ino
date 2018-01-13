@@ -28,6 +28,7 @@ unsigned long tokenIdTime = 0;
 
 void setup() {
   // init PIN
+  pinMode(NRF_INTERRUPT, INPUT);
   pinMode(POWER_AMPLIFIER, OUTPUT);
   digitalWrite(POWER_AMPLIFIER, LOW); // HIGH = OFF
   
@@ -42,11 +43,10 @@ void setup() {
   Mirf.spi = &MirfHardwareSpi; // Hardware SPI: MISO -> 12, MOSI -> 11, SCK -> 13
   Mirf.init(); // Initialise la bibliothèque
   Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
+  Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND); // Adresse de réception
   Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
-  Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
-  Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND); // Adresse de réception
-  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
+  //Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
 
   sendMessage("init started");
 
@@ -56,7 +56,7 @@ void setup() {
   // play sound
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
-  timer = 5000;
+  timer = 20; //60*3; // set active 3 minutes
 
   sendMessage("init done");
 }
@@ -103,9 +103,10 @@ void loop() {
     } else {
       // play sound
       digitalWrite(POWER_AMPLIFIER, LOW);
+      delay(500);
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
-      timer = 60*3;  // set active during 3 minutes
+      timer = 10;//60*3;  // set active during 3 minutes
       
       // send success message to the emitter
       sendMessage(String(id) + ";success");
@@ -118,8 +119,8 @@ void loop() {
       dfPlayer.stop();
       //dfPlayer.sleep(); 
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
-      DEBUG_PRINT("LONG SLEEP");
-      attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, CHANGE);
+      delay(500);
+      attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, FALLING);
       LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
       detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
       DEBUG_PRINT("WAKEUP");
@@ -161,6 +162,7 @@ void sendMessage(String msg) {
   DEBUG_PRINT("send message: " + message);
   byte data[32];
   message.getBytes(data, 32);
+  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
   Mirf.send(data);
   while (Mirf.isSending());
 }
