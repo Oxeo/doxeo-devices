@@ -46,7 +46,7 @@ void setup() {
   Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND); // Adresse de réception
   Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
-  //Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
+  Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
 
   sendMessage("init started");
 
