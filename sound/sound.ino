@@ -94,18 +94,19 @@ void loop() {
       // already done, send success in case the previous message was not received
       sendMessage(String(id) + ";success");
     } else if (id == 0) {
-      sendMessage("missing ID (NAME;ID;folder-sound-volume)");
+      sendMessage("missing ID"); // NAME;ID;folder-sound-volume
     } else if (message == "ping") {
-      // send success message to the emitter
-      sendMessage(String(id) + ";success");
-      tokenId = id;
-      tokenIdTime = millis();
+      sendAck(id);
+    } else if (message == "stop") {
+      dfPlayer.stop();
+      stopTime = millis() + 5000; // stop after 5 secondes
+      sendAck(id);
     } else if (folder < 1 || folder > 99) {
-      sendMessage(String(id) + ";folder parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";folder arg error!");
     } else if (sound < 1 || sound > 999) {
-      sendMessage(String(id) + ";sound parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";sound arg error!");
     } else if (volume < 1 || volume > 30) {
-      sendMessage(String(id) + ";volume parameter error (NAME;ID;folder-sound-volume)!");
+      sendMessage(String(id) + ";volume arg error!");
     } else {
       // play sound
       digitalWrite(POWER_AMPLIFIER, LOW);
@@ -113,10 +114,7 @@ void loop() {
       dfPlayer.playFolder(folder, sound);
       stopTime = millis() + 10*60000; // set active during 10 minutes
     
-      // send success message to the emitter
-      sendMessage(String(id) + ";success");
-      tokenId = id;
-      tokenIdTime = millis();
+      sendAck(id);
     }
   } else {
     // Sleep when timer elapsed
@@ -133,7 +131,7 @@ void loop() {
         Mirf.configRegister(STATUS, 0x70); // clear IRQ register
       }
     } else {
-        delay(10);
+      delay(10);
     }
   }
 
@@ -154,13 +152,15 @@ void loop() {
 void initDfPlayer() {
   dfPlayerSerial.begin(9600);
 
-  sendMessage("Initializing DFPlayer ... (May take 3~5 seconds)");
-
   if (!dfPlayer.begin(dfPlayerSerial)) {
-    sendMessage("Unable to initialize DFPlayer Mini, check the SD card!");
+    sendMessage("Init error check SD card");
   }
+}
 
-  sendMessage("DFPlayer initialized");
+void sendAck(int id) {
+  sendMessage(String(id) + ";success");
+  tokenId = id;
+  tokenIdTime = millis();
 }
 
 void sendMessage(String msg) {
@@ -207,19 +207,19 @@ String dfPlayerDetail(uint8_t type, int value) {
     case DFPlayerError:
       switch (value) {
         case Busy:
-          return "DFPlayerError: Card not found";
+          return "Card not found";
         case Sleeping:
-          return "DFPlayerError: Sleeping";
+          return "Sleeping";
         case SerialWrongStack:
-          return "DFPlayerError: Get Wrong Stack";
+          return "Get Wrong Stack";
         case CheckSumNotMatch:
-          return "DFPlayerError: Check Sum Not Match";
+          return "Check Sum Not Match";
         case FileIndexOut:
-          return "DFPlayerError: File Index Out of Bound";
+          return "File Index Out of Bound";
         case FileMismatch:
-          return "DFPlayerError: Cannot Find File";
+          return "Cannot Find File";
         case Advertise:
-          return "DFPlayerError: In Advertise";
+          return "In Advertise";
         default:
           return "";
       }
