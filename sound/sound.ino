@@ -20,7 +20,7 @@ SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
 
 // Timer
-int timer = 0;
+unsigned long stopTime = 0;
 
 // Token ID
 unsigned long tokenId = 0;
@@ -47,6 +47,7 @@ void setup() {
   Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
+  //Mirf.configRegister(CONFIG, 0x3F);
 
   sendMessage("init started");
 
@@ -56,7 +57,7 @@ void setup() {
   // play sound
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
-  timer = 20; //60*3; // set active 3 minutes
+  stopTime = millis() + 10*60000; // set active during 10 minutes
 
   sendMessage("init done");
 }
@@ -94,6 +95,11 @@ void loop() {
       sendMessage(String(id) + ";success");
     } else if (id == 0) {
       sendMessage("missing ID (NAME;ID;folder-sound-volume)");
+    } else if (message == "ping") {
+      // send success message to the emitter
+      sendMessage(String(id) + ";success");
+      tokenId = id;
+      tokenIdTime = millis();
     } else if (folder < 1 || folder > 99) {
       sendMessage(String(id) + ";folder parameter error (NAME;ID;folder-sound-volume)!");
     } else if (sound < 1 || sound > 999) {
@@ -103,11 +109,10 @@ void loop() {
     } else {
       // play sound
       digitalWrite(POWER_AMPLIFIER, LOW);
-      delay(500);
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
-      timer = 10;//60*3;  // set active during 3 minutes
-      
+      stopTime = millis() + 10*60000; // set active during 10 minutes
+    
       // send success message to the emitter
       sendMessage(String(id) + ";success");
       tokenId = id;
@@ -115,31 +120,35 @@ void loop() {
     }
   } else {
     // Sleep when timer elapsed
-    if (timer < 1) {
+    if (stopTime < millis()) {
       dfPlayer.stop();
       //dfPlayer.sleep(); 
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
-      delay(500);
-      attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, FALLING);
-      LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-      detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
-      DEBUG_PRINT("WAKEUP");
+      delay(100);
+      if (!Mirf.dataReady()) {
+        attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
+        LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+        detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+        DEBUG_PRINT("WAKEUP");
+        Mirf.configRegister(STATUS, 0x70); // clear IRQ register
+      }
     } else {
-      #ifdef DEBUG
-        delay(1000);
-      #else
-        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-      #endif
-      
-      timer--;
+        delay(10);
     }
   }
 
-  #ifdef DEBUG
-    if (dfPlayer.available()) {
-      printDfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+  // Get DFPlayer status
+  if (dfPlayer.available()) {
+    String msg = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+    
+    if (msg != "") {
+        sendMessage(msg);
+        
+        if (dfPlayer.readType() == DFPlayerPlayFinished) {
+            stopTime = millis() + 5000; // stop after 5 secondes
+        }
     }
-  #endif
+  }
 }
 
 void initDfPlayer() {
@@ -147,14 +156,11 @@ void initDfPlayer() {
 
   sendMessage("Initializing DFPlayer ... (May take 3~5 seconds)");
 
-  if (!dfPlayer.begin(dfPlayerSerial)) {  //Use softwareSerial to communicate with mp3.
-    Serial.println(F("Unable to begin:"));
-    Serial.println(F("1.Please recheck the connection!"));
-    Serial.println(F("2.Please insert the SD card!"));
+  if (!dfPlayer.begin(dfPlayerSerial)) {
     sendMessage("Unable to initialize DFPlayer Mini, check the SD card!");
   }
 
-  sendMessage("DFPlayer Mini online");
+  sendMessage("DFPlayer initialized");
 }
 
 void sendMessage(String msg) {
@@ -184,58 +190,41 @@ String parseMsg(String data, char separator, int index)
   return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-void printDfPlayerDetail(uint8_t type, int value) {
+String dfPlayerDetail(uint8_t type, int value) {
   switch (type) {
     case TimeOut:
-      Serial.println(F("Time Out!"));
-      break;
+      return "Time Out!";
     case WrongStack:
-      Serial.println(F("Stack Wrong!"));
-      break;
+      return "Stack Wrong!";
     case DFPlayerCardInserted:
-      Serial.println(F("Card Inserted!"));
-      break;
+      return "Card Inserted!";
     case DFPlayerCardRemoved:
-      Serial.println(F("Card Removed!"));
-      break;
+      return "Card Removed!";
     case DFPlayerCardOnline:
-      Serial.println(F("Card Online!"));
-      break;
+      return "Card Online!";
     case DFPlayerPlayFinished:
-      Serial.print(F("Number:"));
-      Serial.print(value);
-      Serial.println(F(" Play Finished!"));
-      break;
+      return "Song " + String(value) + " play finished!";
     case DFPlayerError:
-      Serial.print(F("DFPlayerError:"));
       switch (value) {
         case Busy:
-          Serial.println(F("Card not found"));
-          break;
+          return "DFPlayerError: Card not found";
         case Sleeping:
-          Serial.println(F("Sleeping"));
-          break;
+          return "DFPlayerError: Sleeping";
         case SerialWrongStack:
-          Serial.println(F("Get Wrong Stack"));
-          break;
+          return "DFPlayerError: Get Wrong Stack";
         case CheckSumNotMatch:
-          Serial.println(F("Check Sum Not Match"));
-          break;
+          return "DFPlayerError: Check Sum Not Match";
         case FileIndexOut:
-          Serial.println(F("File Index Out of Bound"));
-          break;
+          return "DFPlayerError: File Index Out of Bound";
         case FileMismatch:
-          Serial.println(F("Cannot Find File"));
-          break;
+          return "DFPlayerError: Cannot Find File";
         case Advertise:
-          Serial.println(F("In Advertise"));
-          break;
+          return "DFPlayerError: In Advertise";
         default:
-          break;
+          return "";
       }
-      break;
     default:
-      break;
+      return "";
   }
 }
 
