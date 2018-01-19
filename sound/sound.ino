@@ -41,13 +41,12 @@ void setup() {
   Mirf.cePin = 9; // PIN CE sur D9
   Mirf.csnPin = 10; // PIN CSN sur D10
   Mirf.spi = &MirfHardwareSpi; // Hardware SPI: MISO -> 12, MOSI -> 11, SCK -> 13
-  Mirf.init(); // Initialise la bibliothèque
+  Mirf.init();
   Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
-  Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND); // Adresse de réception
+  Mirf.setRADDR((byte *) DOXEO_ADDR_SOUND);
   Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
-  //Mirf.configRegister(CONFIG, 0x3F);
 
   sendMessage("init started");
 
@@ -120,9 +119,8 @@ void loop() {
     // Sleep when timer elapsed
     if (stopTime < millis()) {
       dfPlayer.stop();
-      //dfPlayer.sleep(); 
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
-      delay(100);
+      delay(50);
       if (!Mirf.dataReady()) {
         attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
         LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -142,7 +140,7 @@ void loop() {
     if (msg != "") {
         sendMessage(msg);
         
-        if (dfPlayer.readType() == DFPlayerPlayFinished) {
+        if (msg == "Play finished!") {
             stopTime = millis() + 5000; // stop after 5 secondes
         }
     }
@@ -168,7 +166,7 @@ void sendMessage(String msg) {
   DEBUG_PRINT("send message: " + message);
   byte data[32];
   message.getBytes(data, 32);
-  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de transmission
+  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
   Mirf.send(data);
   while (Mirf.isSending());
 }
@@ -203,7 +201,7 @@ String dfPlayerDetail(uint8_t type, int value) {
     case DFPlayerCardOnline:
       return "Card Online!";
     case DFPlayerPlayFinished:
-      return "Song " + String(value) + " play finished!";
+      return "Play finished!";
     case DFPlayerError:
       switch (value) {
         case Busy:
