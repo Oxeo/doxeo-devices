@@ -1,13 +1,13 @@
 #include "SoftwareSerial.h"
 #include "DFRobotDFPlayerMini.h"
-#include <SPI.h>      // Pour la communication via le port SPI
-#include <Mirf.h>     // Pour la gestion de la communication
-#include <nRF24L01.h> // Pour les définitions des registres du nRF24L01
-#include <MirfHardwareSpiDriver.h> // Pour la communication SPI (ne cherchez pas à comprendre)
+#include <SPI.h>
+#include <Mirf.h>
+#include <nRF24L01.h>
+#include <MirfHardwareSpiDriver.h>
 #include <LowPower.h>
 #include <DoxeoConfig.h>
 
-#define DEBUG
+//#define DEBUG
 #include "DebugUtils.h"
 
 #define DFPLAYER_RX_PIN 8
@@ -91,15 +91,16 @@ void loop() {
       // do nothing, the message is not for us
     } else if (id == tokenId && (millis() - tokenIdTime < 60000)) {
       // already done, send success in case the previous message was not received
-      sendMessage(String(id) + ";success");
+      sendAck(id);
     } else if (id == 0) {
       sendMessage("missing ID"); // NAME;ID;folder-sound-volume
     } else if (message == "ping") {
       sendAck(id);
     } else if (message == "stop") {
+      sendAck(id);
       dfPlayer.stop();
       stopTime = millis() + 5000; // stop after 5 secondes
-      sendAck(id);
+      sendMessage("Play stopped!");
     } else if (folder < 1 || folder > 99) {
       sendMessage(String(id) + ";folder arg error!");
     } else if (sound < 1 || sound > 999) {
@@ -107,13 +108,15 @@ void loop() {
     } else if (volume < 1 || volume > 30) {
       sendMessage(String(id) + ";volume arg error!");
     } else {
+      sendAck(id);
+      
       // play sound
       digitalWrite(POWER_AMPLIFIER, LOW);
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
       stopTime = millis() + 10*60000; // set active during 10 minutes
     
-      sendAck(id);
+      sendMessage("Play started!");
     }
   } else {
     // Sleep when timer elapsed
@@ -121,15 +124,13 @@ void loop() {
       dfPlayer.stop();
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
       delay(50);
-      if (!Mirf.dataReady()) {
+      if (!Mirf.dataReady() && !Mirf.isSending()) {
         attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
         LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
         detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
         DEBUG_PRINT("WAKEUP");
         Mirf.configRegister(STATUS, 0x70); // clear IRQ register
       }
-    } else {
-      delay(10);
     }
   }
 
@@ -167,8 +168,10 @@ void sendMessage(String msg) {
   byte data[32];
   message.getBytes(data, 32);
   Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
-  Mirf.send(data);
-  while (Mirf.isSending());
+  for (int i=0; i<3; ++i) {
+    Mirf.send(data);
+    while (Mirf.isSending());
+  }
 }
 
 String parseMsg(String data, char separator, int index)
