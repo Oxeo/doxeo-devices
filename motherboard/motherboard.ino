@@ -83,12 +83,15 @@ void setup() {
   // init temperature sensor
   sensors.begin();
   delay(1000);
-  takeTemperature();
   timer.every(600000, takeTemperature);
 
+  Serial.println("Doxeoboard started");
+
+  // take first temperature
+  takeTemperature();
+
   // play buzzer
-  timer.pulseImmediate(PIN_BUZZER, 50, HIGH);
-  Serial.println("Motherboard started");
+  timer.pulseImmediate(PIN_BUZZER, 20, HIGH);
 }
 
 void loop() {
@@ -163,7 +166,7 @@ void loop() {
   }
   
   // NRF reception
-  if (Mirf.dataReady()) {
+  while (Mirf.dataReady()) {
     byte byteMsg[32];
     Mirf.getData(byteMsg);
     String message = String((char *)byteMsg);
