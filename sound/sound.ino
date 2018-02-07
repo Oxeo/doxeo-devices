@@ -168,7 +168,7 @@ void sendMessage(String msg) {
   byte data[32];
   message.getBytes(data, 32);
   Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
-  for (int i=0; i<3; ++i) {
+  for (int i=0; i<5; ++i) {
     Mirf.send(data);
     while (Mirf.isSending());
   }
