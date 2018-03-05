@@ -90,8 +90,10 @@ void loop() {
 void sendMessage(String msg) {
   String message = "temperature1;" + msg;
   message.getBytes(data, 32);
-  Mirf.send(data);
-  while (Mirf.isSending());
+  for (int i=0; i<3; ++i) {
+    Mirf.send(data);
+    while (Mirf.isSending());
+  }
   Mirf.powerDown(); // power down NRF to save energy
 }
 
