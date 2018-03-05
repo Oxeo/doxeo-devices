@@ -29,11 +29,12 @@ OneWire oneWire(PIN_TEMPERATURE);
 DallasTemperature sensors(&oneWire);
 byte tempAddress[8];
 
+bool waterPumpOn;
+
 void setup() {
   // init PIN
   pinMode(NRF_INTERRUPT, INPUT);
   pinMode(WATER_RELAY, OUTPUT);
-  digitalWrite(WATER_RELAY, LOW); // HIGH = OFF
   pinMode(WATER_SENSOR, INPUT_PULLUP);
   
   // init serial for debugging
@@ -65,8 +66,9 @@ void setup() {
   sensors.setResolution(tempAddress, TEMPERATURE_PRECISION);
   digitalWrite(PIN_ALIM_TEMPERATURE, LOW);
   pinMode(PIN_ALIM_TEMPERATURE, INPUT); // set power pin for DS18B20 to input before sleeping, saves power 
-  
-  stopTime = millis() + 10000; // set active during 1 minutes
+
+  enableWaterPump(true);
+  stopTime = millis() + 10000; // set active during 10 seconds
   sendMessage("init done");
 }
 
@@ -84,16 +86,8 @@ void loop() {
     String receptorName = parseMsg(msg,';', 0);
     int id = parseMsg(msg, ';', 1).toInt();
     String message = parseMsg(msg, ';', 2);
-    int folder = parseMsg(message, '-', 0).toInt();
-    int sound = parseMsg(message, '-', 1).toInt();
-    int volume = parseMsg(message, '-', 2).toInt();
-    
-    // display message for debug
-    //DEBUG_PRINT("receptorName: " + receptorName);
-    //DEBUG_PRINT("id: " + String(id));
-    //DEBUG_PRINT("folder: " + String(folder));
-    //DEBUG_PRINT("sound: " + String(sound));
-    //DEBUG_PRINT("volume: " + String(volume));
+    int mode = parseMsg(message, '-', 0).toInt();
+    int timeSelected = parseMsg(message, '-', 1).toInt();
 
     // handle message
     if (receptorName != DOXEO_ADDR_FOUNTAIN) {
@@ -102,37 +96,36 @@ void loop() {
       // already done, send success in case the previous message was not received
       sendAck(id);
     } else if (id == 0) {
-      sendMessage("missing ID"); // NAME;ID;folder-sound-volume
+      sendMessage("missing ID"); // NAME;ID
     } else if (message == "ping") {
       sendAck(id);
-    } else if (message == "stop") {
+    } else if (message == "temperature") {
       sendAck(id);
-      digitalWrite(WATER_RELAY, HIGH);
-      stopTime = millis(); // stop
-      sendMessage("Fountain stopped!");
-    } else if (folder < 1 || folder > 99) {
-      sendMessage(String(id) + ";folder arg error!");
-    } else if (sound < 1 || sound > 999) {
-      sendMessage(String(id) + ";sound arg error!");
-    } else if (volume < 1 || volume > 30) {
-      sendMessage(String(id) + ";volume arg error!");
-    } else {
-      sendAck(id);
-      
-      // Start fountain
-      digitalWrite(WATER_RELAY, LOW);
-      stopTime = millis() + 1*60000; // set active during 1 minutes
-    
-      sendMessage("Fountain started!");
-
       String temp = takeTemperature();
       sendMessage(temp);
+    } else if (message == "stop") {
+      sendAck(id);
+      stopTime = millis(); // stop now
+    } else if (mode < 1 || mode > 1) {
+      sendMessage(String(id) + ";mode arg error!");
+    } else if (timeSelected < 1 || timeSelected > 360) {
+      sendMessage(String(id) + ";timer selected arg error!");
+    } else {
+      sendAck(id);
+      pinMode(WATER_SENSOR, INPUT_PULLUP);
+      enableWaterPump(true);
+      stopTime = millis() + timeSelected*60000;
+      sendMessage("Fountain started!");
     }
   } else {
     // Sleep when timer elapsed
     if (stopTime < millis()) {
-      digitalWrite(WATER_RELAY, HIGH);  // stop fountain
-      delay(50);
+      if (stopTime != 0) {
+        enableWaterPump(false);
+        pinMode(WATER_SENSOR, INPUT);
+        stopTime = 0;
+        sendMessage("Fountain stopped!");
+      }
       if (!Mirf.dataReady() && !Mirf.isSending()) {
         attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
         LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -140,11 +133,25 @@ void loop() {
         DEBUG_PRINT("WAKEUP");
         Mirf.configRegister(STATUS, 0x70); // clear IRQ register
       }
+    } else {
+      if (digitalRead(WATER_SENSOR) == HIGH && waterPumpOn) {
+        enableWaterPump(false);
+        sendMessage("Fountain stopped because not enough water!");
+      } else if (digitalRead(WATER_SENSOR) == LOW && waterPumpOn == false) {
+        enableWaterPump(true);
+      }
+      delay(100);
     }
+  }
+}
 
-    if (digitalRead(WATER_SENSOR) == HIGH) {
-      Serial.println("not enouph water");
-    }
+void enableWaterPump(bool enable) {
+  if (enable) {
+    waterPumpOn = true;
+    digitalWrite(WATER_RELAY, LOW);
+  } else {
+    waterPumpOn = false;
+    digitalWrite(WATER_RELAY, HIGH);
   }
 }
 
@@ -178,6 +185,8 @@ void sendMessage(String msg) {
     Mirf.send(data);
     while (Mirf.isSending());
   }
+  
+  Mirf.powerDown(); // power down NRF to save energy
 }
 
 String parseMsg(String data, char separator, int index)
