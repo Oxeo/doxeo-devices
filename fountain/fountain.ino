@@ -11,7 +11,7 @@
 #include "DebugUtils.h"
 
 #define WATER_SENSOR 3
-#define WATER_RELAY 6
+#define WATER_PUMP 6
 #define PIN_ALIM_TEMPERATURE 4
 #define PIN_TEMPERATURE 5
 #define NRF_INTERRUPT 2
@@ -34,7 +34,7 @@ bool waterPumpOn;
 void setup() {
   // init PIN
   pinMode(NRF_INTERRUPT, INPUT);
-  pinMode(WATER_RELAY, OUTPUT);
+  pinMode(WATER_PUMP, OUTPUT);
   pinMode(WATER_SENSOR, INPUT_PULLUP);
   
   // init serial for debugging
@@ -120,9 +120,9 @@ void loop() {
   } else {
     // Sleep when timer elapsed
     if (stopTime < millis()) {
-      if (stopTime != 0) {
+      if (stopTime != 0 || waterPumpOn == true) {
         enableWaterPump(false);
-        pinMode(WATER_SENSOR, INPUT);
+        pinMode(WATER_SENSOR, INPUT); // to save energy
         stopTime = 0;
         sendMessage("Fountain stopped!");
       }
@@ -136,9 +136,10 @@ void loop() {
     } else {
       if (digitalRead(WATER_SENSOR) == HIGH && waterPumpOn) {
         enableWaterPump(false);
-        sendMessage("Fountain stopped because not enough water!");
+        sendMessage("Fountain stopped because not enough water detected!");
       } else if (digitalRead(WATER_SENSOR) == LOW && waterPumpOn == false) {
         enableWaterPump(true);
+        sendMessage("Fountain started because enough water detected!");
       }
       delay(100);
     }
@@ -148,10 +149,10 @@ void loop() {
 void enableWaterPump(bool enable) {
   if (enable) {
     waterPumpOn = true;
-    digitalWrite(WATER_RELAY, LOW);
+    digitalWrite(WATER_PUMP, LOW);
   } else {
     waterPumpOn = false;
-    digitalWrite(WATER_RELAY, HIGH);
+    digitalWrite(WATER_PUMP, HIGH);
   }
 }
 
@@ -185,8 +186,6 @@ void sendMessage(String msg) {
     Mirf.send(data);
     while (Mirf.isSending());
   }
-  
-  Mirf.powerDown(); // power down NRF to save energy
 }
 
 String parseMsg(String data, char separator, int index)
