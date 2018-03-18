@@ -32,9 +32,15 @@ DallasTemperature sensors(&oneWire);
 byte tempAddress[8];
 
 // Status
-bool fountainOn;
-bool lightOn;
-bool waterPumpOn;
+bool fountainOn;        // indicate if the fountain is on
+bool lightOn;           // indicate if the light is on
+bool waterPumpOn;       // indicate if the water pump is running
+bool lackOfWater;       // indicate if the fountain is short of water
+
+// mode
+int fontainAutoModeTimeOn;
+int fontainAutoModeTimeOff;
+unsigned long lastChangedWaterPumpStatus;
 
 void setup() {
   // init PIN
@@ -95,7 +101,8 @@ void loop() {
     String message = parseMsg(msg, ';', 2);
     String device = parseMsg(message, '-', 0);
     int timeSelected = parseMsg(message, '-', 1).toInt();
-    int mode = parseMsg(message, '-', 2).toInt();
+    int param1 = parseMsg(message, '-', 2).toInt();
+    int param2 = parseMsg(message, '-', 3).toInt();
 
     // handle message
     if (receptorName != DOXEO_ADDR_FOUNTAIN) {
@@ -111,8 +118,6 @@ void loop() {
       sendMessage(String(id) + ";device arg error!");
     } else if (timeSelected < 1 || timeSelected > 360) {
       sendMessage(String(id) + ";timer selected arg error!");
-    } else if (mode < 1 || mode > 1) {
-      sendMessage(String(id) + ";mode arg error!");
     } else {
       sendAck(id);
 
@@ -120,7 +125,7 @@ void loop() {
         String temp = takeTemperature();
         sendMessage(temp);
       } else if (device == "fountain") {
-        enableFountain(timeSelected * 60);
+        enableFountain(timeSelected * 60, param1 *60, param2 * 60);
       } else if (device == "light") {
         enableLight(timeSelected * 60);
       }
@@ -134,15 +139,26 @@ void loop() {
     if (fountainOn && fountainTimer < millis()) {
       enableFountain(0);
     }
-
-    // manage water sensor
+    
     if (fountainOn) {
-      if (digitalRead(WATER_SENSOR) == HIGH && waterPumpOn) {
+      // manage water sensor
+      if (lackOfWater == false && digitalRead(WATER_SENSOR) == HIGH) {
         enableWaterPump(false);
+        lackOfWater = true;
         sendMessage("Fountain stopped because not enough water detected!");
-      } else if (digitalRead(WATER_SENSOR) == LOW && waterPumpOn == false) {
+      } else if (lackOfWater == true && digitalRead(WATER_SENSOR) == LOW) {
+        lackOfWater = false;
         enableWaterPump(true);
         sendMessage("Fountain started because enough water detected!");
+      }
+
+      // manage on off auto mode
+      if (fontainAutoModeTimeOn != 0 && fontainAutoModeTimeOff != 0) {
+        if (waterPumpOn && millis() > lastChangedWaterPumpStatus + fontainAutoModeTimeOn) {
+          enableWaterPump(false);
+        } else if (waterPumpOn == false && lackOfWater == false && millis() > lastChangedWaterPumpStatus + fontainAutoModeTimeOff) {
+          enableWaterPump(true);
+        }
       }
     }
     
@@ -161,13 +177,17 @@ void enableWaterPump(bool enable) {
     waterPumpOn = false;
     digitalWrite(WATER_PUMP, HIGH);
   }
+  lastChangedWaterPumpStatus = millis();
 }
 
-void enableFountain(int durationSecond) {
+void enableFountain(int durationSecond, int onSecond, int offSecond) {
   if (durationSecond > 0) {
     pinMode(WATER_SENSOR, INPUT_PULLUP);
     enableWaterPump(true);
     fountainTimer = millis() + durationSecond * 1000;
+    fontainAutoModeTimeOn = onSecond * 1000;
+    fontainAutoModeTimeOff = offSecond * 1000;
+    lackOfWater = false;
     fountainOn = true;
     sendMessage("Fountain started!");
   } else {
@@ -177,6 +197,10 @@ void enableFountain(int durationSecond) {
     fountainOn = false;
     sendMessage("Fountain stopped!");
   }
+}
+
+void enableFountain(int durationSecond) {
+  enableFountain(durationSecond, 0, 0);
 }
 
 void enableLight(int durationSecond) {
