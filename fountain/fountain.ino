@@ -12,13 +12,15 @@
 
 #define WATER_SENSOR 3
 #define WATER_PUMP 6
+#define LIGHT 8
 #define PIN_ALIM_TEMPERATURE 4
 #define PIN_TEMPERATURE 5
 #define NRF_INTERRUPT 2
 #define TEMPERATURE_PRECISION 11 //Max 12 bit, min 9 bit
 
 // Timer
-unsigned long stopTime = 0;
+unsigned long fountainTimer = 0;
+unsigned long lightTimer = 0;
 
 // Token ID
 unsigned long tokenId = 0;
@@ -29,11 +31,15 @@ OneWire oneWire(PIN_TEMPERATURE);
 DallasTemperature sensors(&oneWire);
 byte tempAddress[8];
 
+// Status
+bool fountainOn;
+bool lightOn;
 bool waterPumpOn;
 
 void setup() {
   // init PIN
   pinMode(NRF_INTERRUPT, INPUT);
+  pinMode(LIGHT, OUTPUT);
   pinMode(WATER_PUMP, OUTPUT);
   pinMode(WATER_SENSOR, INPUT_PULLUP);
   
@@ -67,8 +73,9 @@ void setup() {
   digitalWrite(PIN_ALIM_TEMPERATURE, LOW);
   pinMode(PIN_ALIM_TEMPERATURE, INPUT); // set power pin for DS18B20 to input before sleeping, saves power 
 
-  enableWaterPump(true);
-  stopTime = millis() + 10000; // set active during 10 seconds
+  enableFountain(10); // 10 seconds
+  enableLight(5); // 5 seconds
+  
   sendMessage("init done");
 }
 
@@ -86,8 +93,9 @@ void loop() {
     String receptorName = parseMsg(msg,';', 0);
     int id = parseMsg(msg, ';', 1).toInt();
     String message = parseMsg(msg, ';', 2);
-    int mode = parseMsg(message, '-', 0).toInt();
+    String device = parseMsg(message, '-', 0);
     int timeSelected = parseMsg(message, '-', 1).toInt();
+    int mode = parseMsg(message, '-', 2).toInt();
 
     // handle message
     if (receptorName != DOXEO_ADDR_FOUNTAIN) {
@@ -99,41 +107,36 @@ void loop() {
       sendMessage("missing ID"); // NAME;ID
     } else if (message == "ping") {
       sendAck(id);
-    } else if (message == "temperature") {
-      sendAck(id);
-      String temp = takeTemperature();
-      sendMessage(temp);
-    } else if (message == "stop") {
-      sendAck(id);
-      stopTime = millis(); // stop now
-    } else if (mode < 1 || mode > 1) {
-      sendMessage(String(id) + ";mode arg error!");
+    } else if (device != "temperature" && device != "fountain" && device != "light") {
+      sendMessage(String(id) + ";device arg error!");
     } else if (timeSelected < 1 || timeSelected > 360) {
       sendMessage(String(id) + ";timer selected arg error!");
+    } else if (mode < 1 || mode > 1) {
+      sendMessage(String(id) + ";mode arg error!");
     } else {
       sendAck(id);
-      pinMode(WATER_SENSOR, INPUT_PULLUP);
-      enableWaterPump(true);
-      stopTime = millis() + timeSelected*60000;
-      sendMessage("Fountain started!");
+
+      if (device == "temperature") {
+        String temp = takeTemperature();
+        sendMessage(temp);
+      } else if (device == "fountain") {
+        enableFountain(timeSelected * 60);
+      } else if (device == "light") {
+        enableLight(timeSelected * 60);
+      }
     }
-  } else {
-    // Sleep when timer elapsed
-    if (stopTime < millis()) {
-      if (stopTime != 0 || waterPumpOn == true) {
-        enableWaterPump(false);
-        pinMode(WATER_SENSOR, INPUT); // to save energy
-        stopTime = 0;
-        sendMessage("Fountain stopped!");
-      }
-      if (!Mirf.dataReady() && !Mirf.isSending()) {
-        attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
-        LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-        detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
-        DEBUG_PRINT("WAKEUP");
-        Mirf.configRegister(STATUS, 0x70); // clear IRQ register
-      }
-    } else {
+  } else if (lightOn || fountainOn) {
+
+    if (lightOn && lightTimer < millis()) {
+      enableLight(0);
+    }
+
+    if (fountainOn && fountainTimer < millis()) {
+      enableFountain(0);
+    }
+
+    // manage water sensor
+    if (fountainOn) {
       if (digitalRead(WATER_SENSOR) == HIGH && waterPumpOn) {
         enableWaterPump(false);
         sendMessage("Fountain stopped because not enough water detected!");
@@ -141,8 +144,12 @@ void loop() {
         enableWaterPump(true);
         sendMessage("Fountain started because enough water detected!");
       }
-      delay(100);
     }
+    
+    delay(100);
+  
+  } else {
+    sleepForever();
   }
 }
 
@@ -153,6 +160,36 @@ void enableWaterPump(bool enable) {
   } else {
     waterPumpOn = false;
     digitalWrite(WATER_PUMP, HIGH);
+  }
+}
+
+void enableFountain(int durationSecond) {
+  if (durationSecond > 0) {
+    pinMode(WATER_SENSOR, INPUT_PULLUP);
+    enableWaterPump(true);
+    fountainTimer = millis() + durationSecond * 1000;
+    fountainOn = true;
+    sendMessage("Fountain started!");
+  } else {
+    enableWaterPump(false);
+    pinMode(WATER_SENSOR, INPUT); // to save energy
+    fountainTimer = 0;
+    fountainOn = false;
+    sendMessage("Fountain stopped!");
+  }
+}
+
+void enableLight(int durationSecond) {
+  if (durationSecond > 0) {
+    digitalWrite(LIGHT, LOW); // start
+    lightTimer = millis() + durationSecond * 1000;
+    lightOn = true;
+    sendMessage("Light started!");
+  } else {
+    digitalWrite(LIGHT, HIGH);  // stop
+    lightTimer = 0;
+    lightOn = false;
+    sendMessage("Light stopped!");
   }
 }
 
@@ -186,6 +223,14 @@ void sendMessage(String msg) {
     Mirf.send(data);
     while (Mirf.isSending());
   }
+}
+
+void sleepForever() {
+  attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
+  LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+  detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+  Mirf.configRegister(STATUS, 0x70); // clear IRQ register
+  DEBUG_PRINT("WAKEUP");
 }
 
 String parseMsg(String data, char separator, int index)
