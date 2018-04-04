@@ -127,7 +127,7 @@ void loop() {
       sendAck(id);
       String temp = takeTemperature();
       sendMessage("t1", temp);
-    } else if (timeSelectedMinute < 1 || timeSelectedMinute > 721) {
+    } else if (timeSelectedMinute < 0 || timeSelectedMinute > 720) {
       sendMessage("timeSelectedMinute arg error!");
     } else if (device == "l1") {
       sendAck(id);
@@ -192,7 +192,7 @@ void loop() {
       }
     }
     
-    delay(100);
+    sleep();
   
   } else {
     sleepForever();
@@ -319,6 +319,13 @@ void sleepForever() {
   detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
   Mirf.configRegister(STATUS, 0x70); // clear IRQ register
   DEBUG_PRINT("WAKEUP");
+}
+
+void sleep() {
+  attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
+  delay(1000);
+  detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+  Mirf.configRegister(STATUS, 0x70); // clear IRQ register
 }
 
 String parseMsg(String data, char separator, int index)
