@@ -57,6 +57,9 @@ void setup() {
   pinMode(WATER_PUMP2, OUTPUT);
   pinMode(WATER_SENSOR2, INPUT_PULLUP);
   
+  digitalWrite(WATER_PUMP1, HIGH);
+  digitalWrite(WATER_PUMP2, HIGH);
+  
   // init serial for debugging
   #ifdef DEBUG
     Serial.begin(9600);
@@ -87,9 +90,9 @@ void setup() {
   digitalWrite(PIN_ALIM_TEMPERATURE, LOW);
   pinMode(PIN_ALIM_TEMPERATURE, INPUT); // set power pin for DS18B20 to input before sleeping, saves power 
 
-  enablePump1(5);  // 5 seconds
-  enablePump2(10); // 10 seconds
-  enableLight(15); // 15 seconds
+  enablePump1(0);
+  enablePump2(0);
+  enableLight(5); // 5 seconds
   
   sendMessage("init done");
 }
