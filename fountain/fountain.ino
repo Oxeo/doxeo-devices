@@ -57,7 +57,7 @@ void setup() {
   pinMode(WATER_PUMP2, OUTPUT);
   pinMode(WATER_SENSOR2, INPUT_PULLUP);
   
-  digitalWrite(WATER_PUMP1, HIGH);
+  digitalWrite(WATER_PUMP1, LOW);
   digitalWrite(WATER_PUMP2, HIGH);
   
   // init serial for debugging
@@ -205,10 +205,10 @@ void loop() {
 void startPump1(bool start) {
   if (start) {
     pump1IsRunning = true;
-    digitalWrite(WATER_PUMP1, LOW);
+    digitalWrite(WATER_PUMP1, HIGH);
   } else {
     pump1IsRunning = false;
-    digitalWrite(WATER_PUMP1, HIGH);
+    digitalWrite(WATER_PUMP1, LOW);
   }
   lastChangedWaterPump1Status = millis();
 }
@@ -265,12 +265,12 @@ void enablePump2(unsigned long durationSecond) {
 
 void enableLight(unsigned long durationSecond) {
   if (durationSecond > 0) {
-    digitalWrite(LIGHT, LOW);
+    digitalWrite(LIGHT, HIGH);
     lightTimer = millis() + durationSecond * 1000;
     lightOn = true;
     sendMessage("l1", "started!");
   } else {
-    digitalWrite(LIGHT, HIGH);
+    digitalWrite(LIGHT, LOW);
     lightTimer = 0;
     lightOn = false;
     sendMessage("l1", "stopped!");
