@@ -47,6 +47,8 @@ void setup() {
   Mirf.payload = 32; // Taille d'un data (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
+  Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
+  Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
 
   sendMessage("init started");
 
@@ -124,12 +126,8 @@ void loop() {
       dfPlayer.stop();
       digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
       delay(50);
-      if (!Mirf.dataReady() && !Mirf.isSending()) {
-        attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
-        LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-        detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
-        DEBUG_PRINT("WAKEUP");
-        Mirf.configRegister(STATUS, 0x70); // clear IRQ register
+      if (!Mirf.dataReady()) {
+        sleepForever();
       }
     }
   }
@@ -163,15 +161,23 @@ void sendAck(int id) {
 }
 
 void sendMessage(String msg) {
-  String message = String(DOXEO_ADDR_SOUND) + ';' + msg;
+  sendNrf(String(DOXEO_ADDR_SOUND) + ';' + msg);
+}
+
+void sendNrf(String message) {
   DEBUG_PRINT("send message: " + message);
   byte data[32];
   message.getBytes(data, 32);
   Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
-  for (int i=0; i<5; ++i) {
+  Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received
+  for (int i=0; i<10; ++i) {
     Mirf.send(data);
     while (Mirf.isSending());
+    if (Mirf.sendWithSuccess == true) {
+      break;
+    }
   }
+  Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
 }
 
 String parseMsg(String data, char separator, int index)
@@ -189,6 +195,17 @@ String parseMsg(String data, char separator, int index)
   }
 
   return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void sleepForever() {
+  if (digitalRead(NRF_INTERRUPT) == LOW) {
+    Mirf.configRegister(STATUS, 0x70); // clear IRQ register
+  }
+  
+  attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
+  LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+  detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
+  DEBUG_PRINT("WAKEUP");
 }
 
 String dfPlayerDetail(uint8_t type, int value) {
