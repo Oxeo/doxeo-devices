@@ -48,6 +48,7 @@ class Nrf24l {
 		void setTADDR(uint8_t * adr);
 		bool dataReady();
 		bool isSending();
+        uint8_t getRetransmittedPackets();
 		bool rxFifoEmpty();
 		bool txFifoEmpty();
 		void getData(uint8_t * data);
@@ -103,6 +104,9 @@ class Nrf24l {
 		 */
 
 		MirfSpiDriver *spi;
+        
+        bool sendWithSuccess;
+        uint8_t status2;
 };
 
 extern Nrf24l Mirf;

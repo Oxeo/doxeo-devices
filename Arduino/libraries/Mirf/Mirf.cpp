@@ -239,14 +239,20 @@ void Nrf24l::send(uint8_t * value)
 
 bool Nrf24l::isSending(){
 	uint8_t status;
+    sendWithSuccess = false;
 	if(PTX){
 		status = getStatus();
+        status2 = status;
 	    	
 		/*
 		 *  if sending successful (TX_DS) or max retries exceded (MAX_RT).
 		 */
 
 		if((status & ((1 << TX_DS)  | (1 << MAX_RT)))){
+            if(status & (1 << TX_DS)){
+                sendWithSuccess = true;
+            }
+                
 			powerUpRx();
 			return false; 
 		}
@@ -260,6 +266,12 @@ uint8_t Nrf24l::getStatus(){
 	uint8_t rv;
 	readRegister(STATUS,&rv,1);
 	return rv;
+}
+
+uint8_t Nrf24l::getRetransmittedPackets(){
+	uint8_t rv;
+	readRegister(OBSERVE_TX,&rv,1);
+	return rv & 0x0F;
 }
 
 void Nrf24l::powerUpRx(){
