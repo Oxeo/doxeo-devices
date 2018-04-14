@@ -171,11 +171,12 @@ void loop() {
     Mirf.getData(byteMsg);
     String message = String((char *)byteMsg);
     timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-    Serial.println("nrf;" + message);
     
     // success returned no need to send again
     if (message == nrfSuccessMsgExpected) {
       nrfSendNumber = 0;
+    } else {
+      Serial.println("nrf;" + message);
     }
   };
   
