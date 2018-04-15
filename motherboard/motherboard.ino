@@ -79,6 +79,7 @@ void setup() {
   Mirf.payload = 32; // Taille d'un message (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // to send much longeur
+  Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
 
   // init temperature sensor
   sensors.begin();
@@ -184,10 +185,15 @@ void loop() {
   if (nrfSendNumber > 0 && (millis() - nrfLastSendTime > 500) && !Mirf.isSending()) {
 
     Mirf.setTADDR(nrfByteAddress);
-    Mirf.send(nrfBufferToSend);
-    while(Mirf.isSending()){
+    for (int i=0; i<10; ++i) {
+      Mirf.send(nrfBufferToSend);
+      while (Mirf.isSending());
+      if (Mirf.sendWithSuccess == true) {
+        int value = Mirf.getRetransmittedPackets();
+        Serial.println("NRF message send: (" + String(value) + "x) " + String((char *)nrfBufferToSend));
+        break;
+      }
     }
-    Serial.println("NRF message send: " + String((char *)nrfBufferToSend));
     
     nrfSendNumber--;
     nrfLastSendTime = millis();
