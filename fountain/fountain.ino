@@ -40,8 +40,6 @@ bool pump1On;
 bool pump2On;      
 bool pump1IsRunning;
 bool pump2IsRunning; 
-bool pump1HasNoWater;
-bool pump2HasNoWater;
 
 // mode on off auto for pump1
 unsigned long pump1AutoModeTimeOn;
@@ -162,38 +160,28 @@ void loop() {
     
     if (pump1On) {
       // manage water sensor
-      if (pump1HasNoWater == false && digitalRead(WATER_SENSOR1) == HIGH) {
-        startPump1(false);
-        pump1HasNoWater = true;
-        sendMessage("p1", "no water detected!");
-      } else if (pump1HasNoWater == true && digitalRead(WATER_SENSOR1) == LOW) {
-        pump1HasNoWater = false;
-        startPump1(true);
-        sendMessage("p1", "water detected!");
+      if (digitalRead(WATER_SENSOR1) == HIGH) {
+        enablePump1(0);
+        sendMessage("p1", "no water");
       }
 
       // manage on off auto mode
       if (pump1AutoModeTimeOn != 0 && pump1AutoModeTimeOff != 0) {
         if (pump1IsRunning && millis() > lastChangedWaterPump1Status + pump1AutoModeTimeOn) {
           startPump1(false);
-          sendMessage("p1", "stand by!");
-        } else if (pump1IsRunning == false && pump1HasNoWater == false && millis() > lastChangedWaterPump1Status + pump1AutoModeTimeOff) {
+          sendMessage("p1", "stand by");
+        } else if (pump1IsRunning == false && millis() > lastChangedWaterPump1Status + pump1AutoModeTimeOff) {
           startPump1(true);
-          sendMessage("p1", "stand by finished!");
+          sendMessage("p1", "stand by finished");
         }
       }
     }
     
     if (pump2On) {
       // manage water sensor
-      if (pump2HasNoWater == false && digitalRead(WATER_SENSOR2) == HIGH) {
-        startPump2(false);
-        pump2HasNoWater = true;
-        sendMessage("p2", "no water detected!");
-      } else if (pump2HasNoWater == true && digitalRead(WATER_SENSOR2) == LOW) {
-        pump2HasNoWater = false;
-        startPump2(true);
-        sendMessage("p2", "water detected!");
+      if (digitalRead(WATER_SENSOR2) == HIGH) {
+        enablePump2(0);
+        sendMessage("p2", "no water");
       }
     }
     
@@ -236,15 +224,14 @@ void enablePump1(unsigned long durationSecond, unsigned long timeOnSecond, unsig
     pump1Timer = millis() + durationSecond * 1000;
     pump1AutoModeTimeOn = timeOnSecond * 1000;
     pump1AutoModeTimeOff = timeOffSecond * 1000;
-    pump1HasNoWater = false;
     pump1On = true;
-    sendMessage("p1", "started!");
+    sendMessage("p1", "started");
   } else {
     startPump1(false);
     pinMode(WATER_SENSOR1, INPUT); // to save energy
     pump1Timer = 0;
     pump1On = false;
-    sendMessage("p1", "stopped!");
+    sendMessage("p1", "stopped");
   }
 }
 
@@ -253,15 +240,14 @@ void enablePump2(unsigned long durationSecond) {
     pinMode(WATER_SENSOR2, INPUT_PULLUP);
     startPump2(true);
     pump2Timer = millis() + durationSecond * 1000;
-    pump2HasNoWater = false;
     pump2On = true;
-    sendMessage("p2", "started!");
+    sendMessage("p2", "started");
   } else {
     startPump2(false);
     pinMode(WATER_SENSOR2, INPUT); // to save energy
     pump2Timer = 0;
     pump2On = false;
-    sendMessage("p2", "stopped!");
+    sendMessage("p2", "stopped");
   }
 }
 
@@ -270,12 +256,12 @@ void enableLight(unsigned long durationSecond) {
     digitalWrite(LIGHT, HIGH);
     lightTimer = millis() + durationSecond * 1000;
     lightOn = true;
-    sendMessage("l1", "started!");
+    sendMessage("l1", "started");
   } else {
     digitalWrite(LIGHT, LOW);
     lightTimer = 0;
     lightOn = false;
-    sendMessage("l1", "stopped!");
+    sendMessage("l1", "stopped");
   }
 }
 
