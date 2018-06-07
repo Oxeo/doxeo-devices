@@ -4,7 +4,7 @@
 #define DOXEO_CHANNEL 1
 #define DOXEO_ADDR_MOTHER "addr1"
 #define DOXEO_ADDR_DOOR1 "addr2"
-#define DOXEO_ADDR_MAT01 "addr3"
 #define DOXEO_ADDR_SOUND "addr4"
+#define DOXEO_ADDR_FOUNTAIN "addr5"
 
 #endif // DOXEOCONFIG_H

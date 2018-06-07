@@ -89,7 +89,10 @@ void loop() {
     //DEBUG_PRINT("volume: " + String(volume));
 
     // handle message
-    if (receptorName != DOXEO_ADDR_SOUND) {
+    if (receptorName == DOXEO_ADDR_MOTHER) {
+        //redirect msg received to the motherboard
+        sendNrf(msg);
+    } else if (receptorName != DOXEO_ADDR_SOUND) {
       // do nothing, the message is not for us
     } else if (id == tokenId && (millis() - tokenIdTime < 60000)) {
       // already done, send success in case the previous message was not received
