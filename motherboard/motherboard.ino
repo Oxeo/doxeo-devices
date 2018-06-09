@@ -1,7 +1,5 @@
 #include <RCSwitch.h>
 #include <OxeoDio.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
 #include <Timer.h>
 #include <Mirf.h>
 #include <QueueList.h> // https://playground.arduino.cc/Code/QueueList
@@ -22,10 +20,6 @@
 // Timer management
 Timer timer;
 
-// Temperature sensor
-OneWire oneWire(PIN_TEMPERATURE);
-DallasTemperature sensors(&oneWire);
-
 // DIO
 OxeoDio dio = OxeoDio();
 unsigned long oldSenderDio = 0;
@@ -39,22 +33,17 @@ int timerIdRfReceptor = -1;
 // NRF
 QueueList <String> nrfSendQueue;
 byte nrfBufferToSend[32];
-byte nrfByteAddress[6];
 unsigned long nrfSendId = 1;
 int nrfSendNumber = 0;
 unsigned long nrfLastSendTime = 0;
 String nrfSuccessMsgExpected = "";
-
-//const int bt = 2;
-unsigned long btTime = 0;
-bool btPressed = false;
+int timeBetweenSend = 500;
 
 void setup() {
   // init pin
   pinMode(PIN_LED_YELLOW, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
-  //pinMode(bt, INPUT);
 
   // init RF 433MhZ
   rcSwitch.enableReceive(digitalPinToInterrupt(PIN_RF_RECEIVER));
@@ -70,26 +59,18 @@ void setup() {
   nrfSendQueue.setPrinter (Serial);
 
   // init NRF
-  Mirf.cePin = 9; // Broche CE sur D9
-  Mirf.csnPin = 10; // Broche CSN sur D10
+  Mirf.cePin = 9;
+  Mirf.csnPin = 10;
   Mirf.spi = &MirfHardwareSpi; // Hardware SPI: MISO -> 12, MOSI -> 11, SCK -> 13
-  Mirf.init(); // Initialise la bibliothèque
+  Mirf.init();
   Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
-  Mirf.setRADDR((byte *) DOXEO_ADDR_MOTHER); // Adresse de réception
+  Mirf.setRADDR((byte *) DOXEO_ADDR_MOTHER);
   Mirf.payload = 32; // Taille d'un message (maximum 32 octets)
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // to send much longeur
   Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
 
-  // init temperature sensor
-  sensors.begin();
-  delay(1000);
-  timer.every(600000, takeTemperature);
-
   Serial.println("Doxeoboard started");
-
-  // take first temperature
-  takeTemperature();
 
   // play buzzer
   timer.pulseImmediate(PIN_BUZZER, 20, HIGH);
@@ -104,7 +85,7 @@ void loop() {
     String commandName = parseCommand(command, ';', 1);
     String commandValue = parseCommand(command, ';', 2);
     
-    if (commandType == "nrf") {
+    if (commandType == "nrf" || commandType == "nrf2") {
       nrfSendQueue.push(command);
     } else if (commandType == "dio") {
       dio.send(commandValue.toInt());
@@ -112,8 +93,6 @@ void loop() {
     } else if (commandType == "rf") {
       rcSwitch.send(commandValue.toInt(), 24);
       Serial.println(command);
-    } else if (commandType == "box" && commandName == "temperature") {
-      takeTemperature();
     } else if (commandType == "box" && commandName == "buzzer") {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
       Serial.println(command);
@@ -124,18 +103,6 @@ void loop() {
       timer.pulseImmediate(PIN_LED_RED, 500, HIGH);
     }
   }
-  
-  /*if (!btPressed && digitalRead(bt) == HIGH && (millis() - btTime > 200)) {
-    Serial.println("button pressed");
-    nrfSendQueue.push("nrf;sound;1-1-10");
-    
-    btTime = millis();
-    btPressed = true;
-  }
-  
-  if (btPressed && digitalRead(bt) == LOW && (millis() - btTime > 200)) {
-    btPressed = false;
-  }*/
 
   // DIO reception
   unsigned long sender = 0;
@@ -182,16 +149,18 @@ void loop() {
   };
   
   // Send Nrf message
-  if (nrfSendNumber > 0 && (millis() - nrfLastSendTime > 500) && !Mirf.isSending()) {
-
-    Mirf.setTADDR(nrfByteAddress);
-    for (int i=0; i<10; ++i) {
-      Mirf.send(nrfBufferToSend);
-      while (Mirf.isSending());
-      if (Mirf.sendWithSuccess == true) {
-        int value = Mirf.getRetransmittedPackets();
-        Serial.println("NRF message send: (" + String(value) + "x) " + String((char *)nrfBufferToSend));
-        break;
+  if (nrfSendNumber > 0 && ((millis() - nrfLastSendTime > timeBetweenSend) || millis() < nrfLastSendTime)) {
+    Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
+    Mirf.send(nrfBufferToSend);
+    while (Mirf.isSending());
+    Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
+    
+    if (Mirf.sendWithSuccess == true) {
+      Serial.println("NRF message send with ACK: (" + String(nrfSendNumber) + "x) " + String((char *)nrfBufferToSend));
+      
+      if (timeBetweenSend < 500) {
+        timeBetweenSend = 500;
+        nrfSendNumber = 2;
       }
     }
     
@@ -209,7 +178,9 @@ void loop() {
     String queue = nrfSendQueue.pop();
     
     // Set destination address
+    byte nrfByteAddress[6];
     parseCommand(queue,';',1).getBytes(nrfByteAddress, 6);
+    Mirf.setTADDR(nrfByteAddress);
     
     // Prepare message to send
     String msgToSend = parseCommand(queue, ';', 1) + ";" + nrfSendId + ";" + parseCommand(queue, ';', 2);
@@ -224,7 +195,13 @@ void loop() {
       nrfSendId++;
     }
     
-    nrfSendNumber = 10;
+    if (parseCommand(queue,';',0) == "nrf2") {
+      nrfSendNumber = 500;
+    } else {
+      nrfSendNumber = 300;
+    }
+    
+    timeBetweenSend = 10;
   }
 
   // timer management
@@ -239,11 +216,6 @@ void resetTemponDio() {
 void resetTemponRf() {
   oldSenderRf = 0;
   timerIdRfReceptor = -1;
-}
-
-void takeTemperature() {
-  sensors.requestTemperatures();
-  send("box", "temperature", sensors.getTempCByIndex(0));
 }
 
 void send(String type, String name, String value) {
