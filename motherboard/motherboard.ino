@@ -87,6 +87,7 @@ void loop() {
     
     if (commandType == "nrf" || commandType == "nrf2") {
       nrfSendQueue.push(command);
+      Serial.println(command);
     } else if (commandType == "dio") {
       dio.send(commandValue.toInt());
       Serial.println(command);
@@ -106,7 +107,7 @@ void loop() {
 
   // DIO reception
   unsigned long sender = 0;
-  if ((sender = dio.read()) != 0) {
+  if ((sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
       send("dio", "", sender);
@@ -149,17 +150,18 @@ void loop() {
   };
   
   // Send Nrf message
-  if (nrfSendNumber > 0 && ((millis() - nrfLastSendTime > timeBetweenSend) || millis() < nrfLastSendTime)) {
+  if (nrfSendNumber > 0 && ((millis() - nrfLastSendTime >= timeBetweenSend) || millis() < nrfLastSendTime)) {
+    //Serial.println("send message " + String(nrfSendNumber) + " : " + String(millis() - nrfLastSendTime));
     Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
     Mirf.send(nrfBufferToSend);
-    while (Mirf.isSending());
+    while (Mirf.isSending()); // take 40ms with 15x retry
     Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
     
     if (Mirf.sendWithSuccess == true) {
       Serial.println("NRF message send with ACK: (" + String(nrfSendNumber) + "x) " + String((char *)nrfBufferToSend));
       
       if (timeBetweenSend < 500) {
-        timeBetweenSend = 500;
+        timeBetweenSend = 1000;
         nrfSendNumber = 2;
       }
     }
@@ -196,9 +198,9 @@ void loop() {
     }
     
     if (parseCommand(queue,';',0) == "nrf2") {
-      nrfSendNumber = 500;
+      nrfSendNumber = 100; // take 5s
     } else {
-      nrfSendNumber = 300;
+      nrfSendNumber = 60;  // take 3s
     }
     
     timeBetweenSend = 10;
