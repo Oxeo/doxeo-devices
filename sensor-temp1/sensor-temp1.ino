@@ -9,11 +9,18 @@
 #include <LowPower.h>
 #include <DoxeoConfig.h>
 
-//#define SENSOR_NAME "bedroom_temp"
-#define SENSOR_NAME "lounge_temp"
+#define SENSOR_ID 1
 
-#define PIN_TEMPERATURE 3 //4
-#define PIN_ALIM_TEMPERATURE 4 //5
+#if SENSOR_ID == 1
+  #define SENSOR_NAME "lounge_temp"
+  #define PIN_TEMPERATURE 3
+  #define PIN_ALIM_TEMPERATURE 4
+#elif SENSOR_ID == 2
+  #define SENSOR_NAME "bedroom_temp"
+  #define PIN_TEMPERATURE 4
+  #define PIN_ALIM_TEMPERATURE 5
+#endif
+
 #define TEMPERATURE_PRECISION 11 //Max 12 bit, min 9 bit
 
 // Temperature sensor
