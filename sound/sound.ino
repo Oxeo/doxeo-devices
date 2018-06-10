@@ -30,7 +30,7 @@ void setup() {
   // init PIN
   pinMode(NRF_INTERRUPT, INPUT);
   pinMode(POWER_AMPLIFIER, OUTPUT);
-  digitalWrite(POWER_AMPLIFIER, LOW); // HIGH = OFF
+  digitalWrite(POWER_AMPLIFIER, HIGH);
   
   // init serial for debugging
   #ifdef DEBUG
@@ -116,7 +116,7 @@ void loop() {
       sendAck(id);
       
       // play sound
-      digitalWrite(POWER_AMPLIFIER, LOW);
+      digitalWrite(POWER_AMPLIFIER, HIGH);
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
       stopTime = millis() + 10*60000; // set active during 10 minutes
@@ -127,7 +127,7 @@ void loop() {
     // Sleep when timer elapsed
     if (stopTime < millis()) {
       dfPlayer.stop();
-      digitalWrite(POWER_AMPLIFIER, HIGH);  // stop amplifier
+      digitalWrite(POWER_AMPLIFIER, LOW);  // stop amplifier
       delay(50);
       if (!Mirf.dataReady()) {
         sleepForever();
