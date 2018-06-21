@@ -93,35 +93,38 @@ void loop() {
   cpt++;
 }
 
-bool sendMessage(String msg) {
-  return sendNrf(String(SENSOR_NAME) + ';' + msg);
+
+void sendMessage(String msg) {
+  bool success;
+
+  for (int i = 0; i < 3; ++i) {
+    success = sendNrf(String(SENSOR_NAME) + ';' + String(DOXEO_ADDR_MOTHER) + ";" + msg);
+
+    if (success) {
+      break;
+    } else {
+      delay(random(100)); // avoid colision
+    }
+  }
 }
 
 bool sendNrf(String message) {
   message.getBytes(data, 32);
 
-  for (unsigned char i=0; i<nbNodes; ++i) {
-    // try to send 3 times
-    for (unsigned char y=0; y<3; ++y) {
-      Mirf.send(data);
-      while (Mirf.isSending());
-      Mirf.powerDown(); // power down NRF to save energy
+  for (unsigned char i = 0; i < nbNodes; ++i) {
+    Mirf.send(data);
+    while (Mirf.isSending());
 
-      if (Mirf.sendWithSuccess == true) {
-        break;
-      } else {
-        sleep(y + 1);
-      }
-    }
-
-    if (Mirf.sendWithSuccess) {
+    if (Mirf.sendWithSuccess == true) {
       break;
     } else {
+      // change selected node
       selectedNode = (selectedNode + 1 < nbNodes) ? selectedNode + 1 : 0;
       Mirf.setTADDR((byte *) nodes[selectedNode]);
     }
   }
-  
+
+  Mirf.powerDown(); // power down NRF to save energy
   return Mirf.sendWithSuccess;
 }
 

@@ -185,11 +185,11 @@ void loop() {
     Mirf.setTADDR(nrfByteAddress);
     
     // Prepare message to send
-    String msgToSend = parseCommand(queue, ';', 1) + ";" + nrfSendId + ";" + parseCommand(queue, ';', 2);
+    String msgToSend = String(DOXEO_ADDR_MOTHER) + ';' + parseCommand(queue, ';', 1) + ";" + nrfSendId + ";" + parseCommand(queue, ';', 2);
     msgToSend.getBytes(nrfBufferToSend, 32);
     
     // prepare success message to be returned
-    nrfSuccessMsgExpected = parseCommand(queue, ';', 1) + ";" + nrfSendId + ";success";
+    nrfSuccessMsgExpected = parseCommand(queue, ';', 1) + ";" + String(DOXEO_ADDR_MOTHER) + ";" + nrfSendId + ";success";
     
     // increase message ID
     nrfSendId++;

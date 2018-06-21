@@ -108,9 +108,10 @@ void loop() {
     DEBUG_PRINT("message received:" + msg);
 
     // parse message {receptorName};{id};{device}-{timeSelectedMinute}-{timeOnMinute}-{timeOffMinute}
-    String receptorName = parseMsg(msg,';', 0);
-    int id = parseMsg(msg, ';', 1).toInt();
-    String message = parseMsg(msg, ';', 2);
+    String from = parseMsg(msg,';', 0);
+    String receptorName = parseMsg(msg,';', 1);
+    int id = parseMsg(msg, ';', 2).toInt();
+    String message = parseMsg(msg, ';', 3);
     String device = parseMsg(message, '-', 0);
     int timeSelectedMinute = parseMsg(message, '-', 1).toInt();
     int timeOnMinute = parseMsg(message, '-', 2).toInt();
@@ -289,11 +290,11 @@ void sendAck(int id) {
 }
 
 void sendMessage(String device, String msg) {
-  sendNrf(String(DOXEO_ADDR_FOUNTAIN) + '-' + device + ';' + msg);
+  sendNrf(String(DOXEO_ADDR_FOUNTAIN) + '-' + device + ';' + String(DOXEO_ADDR_MOTHER) + ';' + msg);
 }
 
 void sendMessage(String msg) {
-  sendNrf(String(DOXEO_ADDR_FOUNTAIN) + ';' + msg);
+  sendNrf(String(DOXEO_ADDR_FOUNTAIN) + ';' + String(DOXEO_ADDR_MOTHER) + ';' + msg);
 }
 
 void sendNrf(String message) {

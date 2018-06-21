@@ -74,9 +74,10 @@ void loop() {
     DEBUG_PRINT("message received:" + msg);
 
     // parse message
-    String receptorName = parseMsg(msg,';', 0);
-    int id = parseMsg(msg, ';', 1).toInt();
-    String message = parseMsg(msg, ';', 2);
+    String from = parseMsg(msg,';', 0);
+    String receptorName = parseMsg(msg,';', 1);
+    int id = parseMsg(msg, ';', 2).toInt();
+    String message = parseMsg(msg, ';', 3);
     int folder = parseMsg(message, '-', 0).toInt();
     int sound = parseMsg(message, '-', 1).toInt();
     int volume = parseMsg(message, '-', 2).toInt();
@@ -91,6 +92,7 @@ void loop() {
     // handle message
     if (receptorName == DOXEO_ADDR_MOTHER) {
         //redirect msg received to the motherboard
+        DEBUG_PRINT("send msg " + msg);
         sendNrf(msg);
     } else if (receptorName != DOXEO_ADDR_SOUND) {
       // do nothing, the message is not for us
@@ -164,7 +166,7 @@ void sendAck(int id) {
 }
 
 void sendMessage(String msg) {
-  sendNrf(String(DOXEO_ADDR_SOUND) + ';' + msg);
+  sendNrf(String(DOXEO_ADDR_SOUND) + ';' + String(DOXEO_ADDR_MOTHER) + ';' + msg);
 }
 
 void sendNrf(String message) {
