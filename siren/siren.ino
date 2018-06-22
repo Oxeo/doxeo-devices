@@ -13,6 +13,11 @@
 #define SIREN 7
 #define BATTERY_SENSE A0
 
+char* nodes[] = {DOXEO_ADDR_MOTHER, DOXEO_ADDR_SOUND};
+const int nbNodes = 2;
+int selectedNode = 0;
+byte data[32];
+
 // Token ID
 unsigned long tokenId = 0;
 unsigned long tokenIdTime = 0;
@@ -60,12 +65,14 @@ void setup() {
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
   Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
   Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
+  Mirf.setTADDR((byte *) nodes[0]);
   
   if (digitalRead(NRF_INTERRUPT) == LOW) {
     Mirf.configRegister(STATUS, 0x70); // clear IRQ register
   }
   attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, FALLING);
-  
+
+  selectedNode = 0;
   sendMessage("init done");
 }
 
@@ -80,9 +87,10 @@ void loop() {
     DEBUG_PRINT("message received:" + msg);
 
     // parse message {receptorName};{id};{message}
-    String receptorName = parseMsg(msg,';', 0);
-    int id = parseMsg(msg, ';', 1).toInt();
-    String message = parseMsg(msg, ';', 2);
+    String from = parseMsg(msg,';', 0);
+    String receptorName = parseMsg(msg,';', 1);
+    int id = parseMsg(msg, ';', 2).toInt();
+    String message = parseMsg(msg, ';', 3);
 
     // handle message
     if (receptorName != DOXEO_ADDR_SIREN) {
@@ -108,7 +116,7 @@ void loop() {
       sendAck(id);
       // send battery level
       computeBatteryLevel();
-      sendMessage("battery: " + String(batteryPcnt) + "% " + String(batteryV) + "V");
+      sendBatteryLevel();
     } else {
       sendMessage("device arg error!");
     }
@@ -127,7 +135,7 @@ void loop() {
     #ifdef DEBUG
       delay(30);
     #else
-      sleep(SLEEP_30MS);
+      sleep(SLEEP_120MS);
     #endif
     
     // Check battery level every 12 hours
@@ -136,7 +144,7 @@ void loop() {
         computeBatteryLevel();
         
         if (abs(oldBatteryPcnt - batteryPcnt) > 1) {
-            sendMessage("battery: " + String(batteryPcnt) + "% " + String(batteryV) + "V");
+            sendBatteryLevel();
             oldBatteryPcnt = batteryPcnt;
         }
         
@@ -154,6 +162,10 @@ int computeBatteryLevel() {
     batteryV  = sensorValue * 0.003225806;
 }
 
+void sendBatteryLevel() {
+  sendMessage("battery=" + String(batteryV) + "v" + String(batteryPcnt) + "%");
+}
+
 void sendAck(int id) {
   sendMessage(String(id) + ";success");
   tokenId = id;
@@ -161,23 +173,39 @@ void sendAck(int id) {
 }
 
 void sendMessage(String msg) {
-  sendNrf(String(DOXEO_ADDR_SIREN) + ';' + msg);
-}
+  bool success;
 
-void sendNrf(String message) {
-  DEBUG_PRINT("send message: " + message);
-  byte data[32];
-  message.getBytes(data, 32);
-  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
-  Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
-  for (int i=0; i<10; ++i) {
-    Mirf.send(data);
-    while (Mirf.isSending());
-    if (Mirf.sendWithSuccess == true) {
+  for (int i = 0; i < 3; ++i) {
+    success = sendNrf(String(DOXEO_ADDR_SIREN) + ';' + String(DOXEO_ADDR_MOTHER) + ";" + msg);
+
+    if (success) {
       break;
+    } else {
+      delay(100);
     }
   }
+}
+
+bool sendNrf(String message) {
+  DEBUG_PRINT("send message: " + message);
+  message.getBytes(data, 32);
+  Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
+  
+  for (unsigned char i = 0; i < nbNodes; ++i) {
+    Mirf.send(data);
+    while (Mirf.isSending());
+
+    if (Mirf.sendWithSuccess == true) {
+      break;
+    } else {
+      // change selected node
+      selectedNode = (selectedNode + 1 < nbNodes) ? selectedNode + 1 : 0;
+      Mirf.setTADDR((byte *) nodes[selectedNode]);
+    }
+  }
+
   Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
+  return Mirf.sendWithSuccess;
 }
 
 void sleep(period_t period) {
