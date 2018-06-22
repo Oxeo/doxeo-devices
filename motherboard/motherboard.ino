@@ -145,6 +145,11 @@ void loop() {
     if (message == nrfSuccessMsgExpected) {
       nrfSendNumber = 0;
     } else {
+      char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
+      if (destAddressIndex > 0) {
+        // remove destination address
+        message.remove(destAddressIndex, 6);
+      }
       Serial.println("nrf;" + message);
     }
   };
