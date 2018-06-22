@@ -6,16 +6,17 @@
 #include <LowPower.h>
 #include <DoxeoConfig.h>
 
-#define SENSOR_NAME "doormat"
-
 #define PIN_WAKEUP 2
 #define PIN_ALIM 4
 
+char* nodes[] = {DOXEO_ADDR_MOTHER, DOXEO_ADDR_SOUND};
+const int nbNodes = 2;
+int selectedNode = 0;
+
 byte data[32];
-int sendError;
 
 void setup() {
-  sendError = 0;
+  randomSeed(analogRead(0)); //initialise la séquence aléatoir
   
   pinMode(PIN_WAKEUP, INPUT);
   pinMode(PIN_ALIM, OUTPUT);
@@ -31,7 +32,9 @@ void setup() {
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // sortie 0dBm @ 250Kbs to improve distance
   Mirf.configRegister(SETUP_RETR, 0x3F);  // send retry 15 times
-  Mirf.setTADDR((byte *) DOXEO_ADDR_MOTHER);
+  Mirf.setTADDR((byte *) nodes[0]);
+
+  selectedNode = 0;
 
   sendMessage("init done");
 }
@@ -58,35 +61,37 @@ void loop() {
 }
 
 void sendMessage(String msg) {
-  bool success = sendNrf(String(SENSOR_NAME) + ';' + msg);
+  bool success;
 
-  if (success == false) {
-    sendError++;
-  } else if (sendError > 0) {
-    if (sendNrf(String(SENSOR_NAME) + ";errorNb" + String(sendError))) {
-      sendError = 0;
+  for (int i = 0; i < 3; ++i) {
+    success = sendNrf(String(DOXEO_ADDR_DOORMAT) + ';' + String(DOXEO_ADDR_MOTHER) + ";" + msg);
+
+    if (success) {
+      break;
+    } else {
+      delay(random(100)); // avoid colision
     }
   }
 }
 
 bool sendNrf(String message) {
-  bool success = false;
   message.getBytes(data, 32);
-  
-  for (int i=0; i<10; ++i) {
+
+  for (unsigned char i = 0; i < nbNodes; ++i) {
     Mirf.send(data);
     while (Mirf.isSending());
-    Mirf.powerDown(); // power down NRF to save energy
-    
+
     if (Mirf.sendWithSuccess == true) {
-      success = true;
       break;
     } else {
-      LowPower.powerDown(SLEEP_120MS, ADC_OFF, BOD_OFF);
+      // change selected node
+      selectedNode = (selectedNode + 1 < nbNodes) ? selectedNode + 1 : 0;
+      Mirf.setTADDR((byte *) nodes[selectedNode]);
     }
   }
 
-  return success;
+  Mirf.powerDown(); // power down NRF to save energy
+  return Mirf.sendWithSuccess;
 }
 
 void wakeUp()
