@@ -14,6 +14,7 @@
 #define PIN_BUZZER 7
 #define PIN_RF_RECEIVER 3
 #define PIN_RF_TRANSMITTER 4
+#define PIN_NRF_INTERRUPT 2
 
 // Timer management
 Timer timer;
@@ -33,9 +34,11 @@ QueueList <String> nrfSendQueue;
 byte nrfBufferToSend[32];
 unsigned long nrfSendId = 1;
 int nrfSendNumber = 0;
+int nrfSendMaxNumber = 0;
 unsigned long nrfLastSendTime = 0;
 String nrfSuccessMsgExpected = "";
 int timeBetweenSend = 500;
+bool newNrfMsgReceived = false;
 
 void setup() {
   // init pin
@@ -66,6 +69,11 @@ void setup() {
   Mirf.config(); // Sauvegarde la configuration dans le module radio
   Mirf.configRegister(RF_SETUP, 0x26); // to send much longeur
   Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
+
+  if (digitalRead(PIN_NRF_INTERRUPT) == LOW) {
+    Mirf.configRegister(STATUS, 0x70); // clear IRQ register
+  }
+  attachInterrupt(digitalPinToInterrupt(PIN_NRF_INTERRUPT), newNrfMsg, FALLING);
 
   Serial.println("Doxeoboard started");
 
@@ -130,24 +138,31 @@ void loop() {
   }
   
   // NRF reception
-  while (Mirf.dataReady()) {
-    byte byteMsg[32];
-    Mirf.getData(byteMsg);
-    String message = String((char *)byteMsg);
-    timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-    
-    // success returned no need to send again
-    if (message == nrfSuccessMsgExpected) {
-      nrfSendNumber = 0;
-    } else {
-      char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
-      if (destAddressIndex > 0) {
-        // remove destination address
-        message.remove(destAddressIndex, 6);
+  if (newNrfMsgReceived) {
+    while (Mirf.dataReady()) {
+      byte byteMsg[32];
+      Mirf.getData(byteMsg);
+      String message = String((char *)byteMsg);
+      timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
+      
+      // success returned no need to send again
+      if (message == nrfSuccessMsgExpected) {
+        nrfSendNumber = 0;
+      } else {
+        char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
+        if (destAddressIndex > 0) {
+          // remove destination address
+          message.remove(destAddressIndex, 6);
+        }
+        Serial.println("nrf;" + message);
       }
-      Serial.println("nrf;" + message);
+    };
+
+    newNrfMsgReceived = false;
+    if (digitalRead(PIN_NRF_INTERRUPT) == LOW) {
+      Mirf.configRegister(STATUS, 0x70); // clear IRQ register
     }
-  };
+  }
   
   // Send Nrf message
   if (nrfSendNumber > 0 && ((millis() - nrfLastSendTime >= timeBetweenSend) || millis() < nrfLastSendTime)) {
@@ -158,7 +173,7 @@ void loop() {
     Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
     
     if (Mirf.sendWithSuccess == true) {
-      Serial.println("NRF message send with success: (" + String(nrfSendNumber) + "x) " + String((char *)nrfBufferToSend));
+      Serial.println(String((char *)nrfBufferToSend) + " send with success (" + String(nrfSendMaxNumber - nrfSendNumber + 1) + "x)");
       
       if (timeBetweenSend < 500) {
         timeBetweenSend = 1000;
@@ -199,8 +214,10 @@ void loop() {
     
     if (parseCommand(queue,';',0) == "nrf2") {
       nrfSendNumber = 100; // take 5s
+      nrfSendMaxNumber = 100;
     } else {
       nrfSendNumber = 60;  // take 3s
+      nrfSendMaxNumber = 60;
     }
     
     timeBetweenSend = 10;
@@ -248,4 +265,9 @@ String parseCommand(String data, char separator, int index)
   }
 
   return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void newNrfMsg()
+{
+  newNrfMsgReceived = true;
 }
