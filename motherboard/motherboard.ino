@@ -10,12 +10,10 @@
 #include <MirfHardwareSpiDriver.h> // Pour la communication SPI (ne cherchez pas à comprendre)
 #include <DoxeoConfig.h>
 
-#define PIN_LED_YELLOW 5
-#define PIN_LED_RED 8
-#define PIN_BUZZER A5
-#define PIN_TEMPERATURE 4
-#define PIN_RF_RECEIVER 2
-#define PIN_RF_TRANSMITTER 3
+#define PIN_LED_YELLOW A5
+#define PIN_BUZZER 7
+#define PIN_RF_RECEIVER 3
+#define PIN_RF_TRANSMITTER 4
 
 // Timer management
 Timer timer;
@@ -42,7 +40,6 @@ int timeBetweenSend = 500;
 void setup() {
   // init pin
   pinMode(PIN_LED_YELLOW, OUTPUT);
-  pinMode(PIN_LED_RED, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
 
   // init RF 433MhZ
@@ -87,7 +84,6 @@ void loop() {
     
     if (commandType == "nrf" || commandType == "nrf2") {
       nrfSendQueue.push(command);
-      Serial.println(command);
     } else if (commandType == "dio") {
       dio.send(commandValue.toInt());
       Serial.println(command);
@@ -101,7 +97,6 @@ void loop() {
       send("name", "doxeo_board", "v1.0.0");
     } else {
       Serial.println("error;unknown command: " + command);
-      timer.pulseImmediate(PIN_LED_RED, 500, HIGH);
     }
   }
 
@@ -163,7 +158,7 @@ void loop() {
     Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
     
     if (Mirf.sendWithSuccess == true) {
-      Serial.println("NRF message send with ACK: (" + String(nrfSendNumber) + "x) " + String((char *)nrfBufferToSend));
+      Serial.println("NRF message send with success: (" + String(nrfSendNumber) + "x) " + String((char *)nrfBufferToSend));
       
       if (timeBetweenSend < 500) {
         timeBetweenSend = 1000;
@@ -209,6 +204,7 @@ void loop() {
     }
     
     timeBetweenSend = 10;
+    Serial.println("Sending " + msgToSend);
   }
 
   // timer management
