@@ -9,8 +9,10 @@
 #include "DebugUtils.h"
 
 #define NRF_INTERRUPT 2
-#define BUZZER 6
-#define SIREN 7
+#define KEY_1 3
+#define KEY_2 4
+#define BUZZER 7
+#define SIREN 8
 #define BATTERY_SENSE A0
 
 char* nodes[] = {DOXEO_ADDR_MOTHER, DOXEO_ADDR_SOUND};
@@ -33,7 +35,7 @@ unsigned long lastWakeUpTime = 0;
 bool checkNewMsg = false;
 
 // Status
-bool sirenOn;
+bool sirenOn = false;
 
 void setup() {
   // use the 1.1 V internal reference for battery sens
@@ -104,8 +106,13 @@ void loop() {
       sendAck(id);
     } else if (message == "start") {
       sendAck(id);
+      tone(BUZZER, 1000); // Send 1KHz sound signal...
+      delay(1000);
+      noTone(BUZZER);
       // start siren
       digitalWrite(SIREN, HIGH);
+      delay(1000);
+      digitalWrite(SIREN, LOW);
       sirenOn = true;
     } else if (message == "stop") {
       sendAck(id);
@@ -149,6 +156,22 @@ void loop() {
         }
         
         checkNewMsg = true;
+    }
+
+    if (digitalRead(KEY_1) == LOW) {
+      tone(BUZZER, 1000); // Send 1KHz sound signal...
+      delay(1000);
+      noTone(BUZZER); 
+    }
+
+    if (digitalRead(KEY_2) == LOW) {
+      tone(BUZZER, 1000); // Send 1KHz sound signal...
+      delay(1000);
+      noTone(BUZZER); 
+      delay(1000);
+      tone(BUZZER, 1000); // Send 1KHz sound signal...
+      delay(1000);
+      noTone(BUZZER); 
     }
   }
 }
