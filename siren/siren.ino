@@ -31,29 +31,34 @@ int oldBatteryPcnt = 0;
 float batteryV = 0.0;
 
 // wake up time
-unsigned long lastWakeUpTime = 0;
+unsigned long lastnrfInterruptTime = 0;
 bool checkNewMsg = false;
 
 // Status
-bool sirenOn = false;
+unsigned long interruptKeyTime = 0;
+unsigned long sirenTime = 0;
+char sirenState = 0;
+bool sirenTest = false;
+char bipNumber = 6;
 
 void setup() {
   // use the 1.1 V internal reference for battery sens
   analogReference(INTERNAL);
-  
+
   // init PIN
   pinMode(NRF_INTERRUPT, INPUT);
+  pinMode(KEY_1, INPUT);
+  pinMode(KEY_2, INPUT);
   pinMode(BUZZER, OUTPUT);
   pinMode(SIREN, OUTPUT);
-  
   digitalWrite(BUZZER, LOW);
   digitalWrite(SIREN, LOW);
-  
+
   // init serial for debugging
-  #ifdef DEBUG
-    Serial.begin(9600);
-    Serial.println("debug mode enable");
-  #endif
+#ifdef DEBUG
+  Serial.begin(9600);
+  Serial.println("debug mode enable");
+#endif
 
   // init NRF
   Mirf.cePin = 9;
@@ -68,19 +73,23 @@ void setup() {
   Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
   Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
   Mirf.setTADDR((byte *) nodes[0]);
-  
+
+  // init NRF interrupt
   if (digitalRead(NRF_INTERRUPT) == LOW) {
     Mirf.configRegister(STATUS, 0x70); // clear IRQ register
   }
-  attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, FALLING);
+  attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), nrfInterrupt, FALLING);
+
+  // init key interrupt
+  attachInterrupt(digitalPinToInterrupt(KEY_1), keyInterrupt, FALLING);
 
   selectedNode = 0;
   sendMessage("init done");
 }
 
 
-void loop() {  
-  // message received  
+void loop() {
+  // message received
   if (checkNewMsg && Mirf.dataReady()) {
     // read message
     byte byteMessage[32];
@@ -89,10 +98,12 @@ void loop() {
     DEBUG_PRINT("message received:" + msg);
 
     // parse message {receptorName};{id};{message}
-    String from = parseMsg(msg,';', 0);
-    String receptorName = parseMsg(msg,';', 1);
+    String from = parseMsg(msg, ';', 0);
+    String receptorName = parseMsg(msg, ';', 1);
     int id = parseMsg(msg, ';', 2).toInt();
-    String message = parseMsg(msg, ';', 3);
+    String data = parseMsg(msg, ';', 3);
+    String message = parseMsg(data, '-', 0);
+    String bipToDo = parseMsg(data, '-', 1);
 
     // handle message
     if (receptorName != DOXEO_ADDR_SIREN) {
@@ -104,85 +115,198 @@ void loop() {
       sendMessage("missing ID");
     } else if (message == "ping") {
       sendAck(id);
-    } else if (message == "start") {
+    } else if (message == "start") { // start siren
       sendAck(id);
-      tone(BUZZER, 1000); // Send 1KHz sound signal...
-      delay(1000);
-      noTone(BUZZER);
-      // start siren
-      digitalWrite(SIREN, HIGH);
-      delay(1000);
-      digitalWrite(SIREN, LOW);
-      sirenOn = true;
-    } else if (message == "stop") {
+      sirenTest = false;
+      bipNumber = bipToDo.toInt();
+      enableSiren(true);
+      sendMessage("started");
+    } else if (message == "start_test") { // start siren
       sendAck(id);
-      // stop siren
-      digitalWrite(SIREN, LOW);
-      sirenOn = false;
-    } else if (message == "battery") {
+      sirenTest = true;
+      bipNumber = bipToDo.toInt();
+      enableSiren(true);
+      sendMessage("test started");
+    } else if (message == "stop") { // stop siren
       sendAck(id);
-      // send battery level
+      enableSiren(false);
+      sendMessage("stopped");
+    } else if (message == "battery") { // send battery level
+      sendAck(id);
       computeBatteryLevel();
       sendBatteryLevel();
     } else {
-      sendMessage("device arg error!");
+      sendAck(id);
+      sendMessage("args error");
+    }
+  } else if (millis() - interruptKeyTime < 5000 || isSirenOn()) {  // key pressed or siren on
+    manageSiren();
+
+    if (successCode()) {
+      if (isSirenOn()) {
+        sendMessage("stopped by key");
+        enableSiren(false);
+      } else {
+#ifdef DEBUG
+  sirenTest = true;
+#endif
+        sound(true);
+        delay(50);
+        sound(false);
+      }
+    }
+  } else if (millis() > batteryLastCompute + 43200000 || millis() < batteryLastCompute) { // Check battery level every 12 hours
+    batteryLastCompute = millis();
+    computeBatteryLevel();
+
+    if (abs(oldBatteryPcnt - batteryPcnt) > 1) {
+      sendBatteryLevel();
+      oldBatteryPcnt = batteryPcnt;
     }
   } else {
     // Sleep 4S
     checkNewMsg = false;
     Mirf.powerDown();
-    #ifdef DEBUG
-      delay(4000);
-    #else
-      sleep(SLEEP_4S);
-    #endif
-    
-    // enable reception during 30ms
+#ifdef DEBUG
+    delay(4000);
+#else
+    sleep(SLEEP_4S);
+#endif
+
+    // enable reception during 120ms
     Mirf.powerUpRx();
-    #ifdef DEBUG
-      delay(30);
-    #else
-      sleep(SLEEP_120MS);
-    #endif
-    
-    // Check battery level every 12 hours
-    if (millis() > batteryLastCompute + 43200000 || millis() < batteryLastCompute) {
-        batteryLastCompute = millis();
-        computeBatteryLevel();
-        
-        if (abs(oldBatteryPcnt - batteryPcnt) > 1) {
-            sendBatteryLevel();
-            oldBatteryPcnt = batteryPcnt;
-        }
-        
-        checkNewMsg = true;
-    }
+#ifdef DEBUG
+    delay(120);
+#else
+    sleep(SLEEP_120MS);
+#endif
+  }
+}
 
-    if (digitalRead(KEY_1) == LOW) {
-      tone(BUZZER, 1000); // Send 1KHz sound signal...
-      delay(1000);
-      noTone(BUZZER); 
-    }
+bool successCode() {
+  static unsigned long btTime = 0;
+  static bool key1Pressed = false;
+  static bool key2Pressed = false;
+  static char state = 0;
+  bool success = false;
 
-    if (digitalRead(KEY_2) == LOW) {
+  if (millis() - btTime > 5000 || millis() < btTime) {
+    state = 0;
+  }
+
+  // manage key1 press
+  if (!key1Pressed && digitalRead(KEY_1) == LOW && (millis() - btTime > 200)) {
+    DEBUG_PRINT("key1 pressed");
+
+    btTime = millis();
+    key1Pressed = true;
+  }
+  if (key1Pressed && digitalRead(KEY_1) == HIGH && (millis() - btTime > 200)) {
+    DEBUG_PRINT("key1 released");
+    key1Pressed = false;
+  }
+
+  // manage key2 press
+  if (!key2Pressed && digitalRead(KEY_2) == LOW && (millis() - btTime > 200)) {
+    DEBUG_PRINT("key2 pressed");
+
+    btTime = millis();
+    key2Pressed = true;
+  }
+  if (key2Pressed && digitalRead(KEY_2) == HIGH && (millis() - btTime > 200)) {
+    DEBUG_PRINT("key2 released");
+    key2Pressed = false;
+  }
+
+  // manage code 121
+  if (state == 0 && key1Pressed) {
+    state++;
+  } else if (state == 1 && !key1Pressed) {
+    state++;
+  } else if (state == 2) {
+    if (key2Pressed) {
+      state++;
+    } else if (key1Pressed) {
+      state = 1;
+    }
+  } else if (state == 3 && !key2Pressed) {
+    state++;
+  } else if (state == 4) {
+    if (key1Pressed) {
+      state++;
+    } else if (key2Pressed) {
+      state = 0;
+    }
+  } else if (state == 5 && !key1Pressed) {
+    DEBUG_PRINT("success code");
+    success = true;
+    state = 0;
+  }
+
+  return success;
+}
+
+void manageSiren() {
+  if (sirenState == 0) {
+    // nothing to do
+  } else if (sirenState == 1) {
+    sound(true);
+    sirenTime = millis();
+    sirenState++;
+  } else if (sirenState == 0 && millis() - sirenTime > 50) {
+    sound(false);
+    sirenTime = millis();
+    sirenState++;
+  } else if ((sirenState % 2 != 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime > 1000) {
+    sound(true);
+    sirenTime = millis();
+    sirenState++;
+  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime > 50) {
+    sound(false);
+    sirenTime = millis();
+    sirenState++;
+  } else if (sirenState == bipNumber * 2 && millis() - sirenTime > 120000) {
+    enableSiren(false);
+  }
+}
+
+void enableSiren(bool enable) {
+  if (enable) {
+    sirenState = 1;
+  } else {
+    sirenState = 0;
+    sound(false);
+    sirenTest = false;
+  }
+}
+
+bool isSirenOn() {
+  return sirenState != 0;
+}
+
+void sound(bool enable) {
+  if (enable) {
+    if (sirenTest) {
       tone(BUZZER, 1000); // Send 1KHz sound signal...
-      delay(1000);
-      noTone(BUZZER); 
-      delay(1000);
-      tone(BUZZER, 1000); // Send 1KHz sound signal...
-      delay(1000);
-      noTone(BUZZER); 
+    } else {
+      digitalWrite(SIREN, HIGH);
+    }
+  } else {
+    if (sirenTest) {
+      noTone(BUZZER);
+    } else {
+      digitalWrite(SIREN, LOW);
     }
   }
 }
 
 int computeBatteryLevel() {
-    int sensorValue = analogRead(BATTERY_SENSE);
-    batteryPcnt = sensorValue / 10;
-    
-    // ((2M+1M)/1M)*1.1 = Vmax = 3.3 Volts
-    // 3.3/1023 = Volts per bit = 0.003225806
-    batteryV  = sensorValue * 0.003225806;
+  int sensorValue = analogRead(BATTERY_SENSE);
+  batteryPcnt = sensorValue / 10;
+
+  // ((2M+1M)/1M)*1.1 = Vmax = 3.3 Volts
+  // 3.3/1023 = Volts per bit = 0.003225806
+  batteryV  = sensorValue * 0.003225806;
 }
 
 void sendBatteryLevel() {
@@ -213,7 +337,7 @@ bool sendNrf(String message) {
   DEBUG_PRINT("send message: " + message);
   message.getBytes(data, 32);
   Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
-  
+
   for (unsigned char i = 0; i < nbNodes; ++i) {
     Mirf.send(data);
     while (Mirf.isSending());
@@ -235,30 +359,34 @@ void sleep(period_t period) {
   if (digitalRead(NRF_INTERRUPT) == LOW) {
     Mirf.configRegister(STATUS, 0x70); // clear IRQ register
   }
-  
-  //attachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT), wakeUp, LOW);
+
   LowPower.powerDown(period, ADC_OFF, BOD_OFF);
-  //detachInterrupt(digitalPinToInterrupt(NRF_INTERRUPT));
 }
 
 String parseMsg(String data, char separator, int index)
 {
   int found = 0;
   int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
+  int maxIndex = data.length() - 1;
 
-  for(int i=0; i<=maxIndex && found<=index; i++){
-    if(data.charAt(i)==separator || i==maxIndex){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
     }
   }
 
-  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-void wakeUp()
+void nrfInterrupt()
 {
   checkNewMsg = true;
 }
+
+void keyInterrupt()
+{
+  interruptKeyTime = millis();
+}
+
