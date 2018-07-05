@@ -83,6 +83,11 @@ void setup() {
   // init key interrupt
   attachInterrupt(digitalPinToInterrupt(KEY_1), keyInterrupt, FALLING);
 
+  batteryLastCompute = 43200000;
+  batteryPcnt = 0;
+  oldBatteryPcnt = 0;
+  batteryV = 0.0;
+
   selectedNode = 0;
   sendMessage("init done");
 }
@@ -130,7 +135,7 @@ void loop() {
     } else if (message == "stop") { // stop siren
       sendAck(id);
       enableSiren(false);
-      sendMessage("stopped");
+      sendMessage("stopped by user");
     } else if (message == "battery") { // send battery level
       sendAck(id);
       computeBatteryLevel();
@@ -148,14 +153,14 @@ void loop() {
         enableSiren(false);
       } else {
 #ifdef DEBUG
-  sirenTest = true;
+        sirenTest = true;
 #endif
         sound(true);
         delay(50);
         sound(false);
       }
     }
-  } else if (millis() > batteryLastCompute + 43200000 || millis() < batteryLastCompute) { // Check battery level every 12 hours
+  } else if (millis() - batteryLastCompute >= 21600000) { // Check battery level every 6 hours
     batteryLastCompute = millis();
     computeBatteryLevel();
 
@@ -173,12 +178,12 @@ void loop() {
     sleep(SLEEP_4S);
 #endif
 
-    // enable reception during 120ms
+    // enable reception during 15ms
     Mirf.powerUpRx();
 #ifdef DEBUG
-    delay(120);
+    delay(15);
 #else
-    sleep(SLEEP_120MS);
+    sleep(SLEEP_15MS);
 #endif
   }
 }
@@ -190,30 +195,30 @@ bool successCode() {
   static char state = 0;
   bool success = false;
 
-  if (millis() - btTime > 5000 || millis() < btTime) {
+  if (millis() - btTime >= 5000) {
     state = 0;
   }
 
   // manage key1 press
-  if (!key1Pressed && digitalRead(KEY_1) == LOW && (millis() - btTime > 200)) {
+  if (!key1Pressed && digitalRead(KEY_1) == LOW && (millis() - btTime >= 200)) {
     DEBUG_PRINT("key1 pressed");
 
     btTime = millis();
     key1Pressed = true;
   }
-  if (key1Pressed && digitalRead(KEY_1) == HIGH && (millis() - btTime > 200)) {
+  if (key1Pressed && digitalRead(KEY_1) == HIGH && (millis() - btTime >= 200)) {
     DEBUG_PRINT("key1 released");
     key1Pressed = false;
   }
 
   // manage key2 press
-  if (!key2Pressed && digitalRead(KEY_2) == LOW && (millis() - btTime > 200)) {
+  if (!key2Pressed && digitalRead(KEY_2) == LOW && (millis() - btTime >= 200)) {
     DEBUG_PRINT("key2 pressed");
 
     btTime = millis();
     key2Pressed = true;
   }
-  if (key2Pressed && digitalRead(KEY_2) == HIGH && (millis() - btTime > 200)) {
+  if (key2Pressed && digitalRead(KEY_2) == HIGH && (millis() - btTime >= 200)) {
     DEBUG_PRINT("key2 released");
     key2Pressed = false;
   }
@@ -253,20 +258,21 @@ void manageSiren() {
     sound(true);
     sirenTime = millis();
     sirenState++;
-  } else if (sirenState == 0 && millis() - sirenTime > 50) {
+  } else if (sirenState == 0 && millis() - sirenTime >= 50) {
     sound(false);
     sirenTime = millis();
     sirenState++;
-  } else if ((sirenState % 2 != 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime > 1000) {
+  } else if ((sirenState % 2 != 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 1000) {
     sound(true);
     sirenTime = millis();
     sirenState++;
-  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime > 50) {
+  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 50) {
     sound(false);
     sirenTime = millis();
     sirenState++;
-  } else if (sirenState == bipNumber * 2 && millis() - sirenTime > 120000) {
+  } else if (sirenState == bipNumber * 2 && millis() - sirenTime >= 300000) {
     enableSiren(false);
+    sendMessage("stopped");
   }
 }
 
@@ -389,4 +395,3 @@ void keyInterrupt()
 {
   interruptKeyTime = millis();
 }
-
