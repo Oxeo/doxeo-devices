@@ -149,8 +149,8 @@ void loop() {
 
     if (successCode()) {
       if (isSirenOn()) {
-        sendMessage("stopped by key");
         enableSiren(false);
+        sendMessage("stopped by key");
       } else {
 #ifdef DEBUG
         sirenTest = true;
@@ -158,6 +158,7 @@ void loop() {
         sound(true);
         delay(50);
         sound(false);
+        sendMessage("code entered");
       }
     }
   } else if (millis() - batteryLastCompute >= 21600000) { // Check battery level every 6 hours
