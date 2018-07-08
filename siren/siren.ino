@@ -134,8 +134,10 @@ void loop() {
       sendMessage("test started");
     } else if (message == "stop") { // stop siren
       sendAck(id);
-      enableSiren(false);
-      sendMessage("stopped by user");
+      if (isSirenOn()) {
+        enableSiren(false);
+        sendMessage("stopped by user");
+      }
     } else if (message == "battery") { // send battery level
       sendAck(id);
       computeBatteryLevel();
@@ -156,7 +158,7 @@ void loop() {
         sirenTest = true;
 #endif
         sound(true);
-        delay(50);
+        delayMicroseconds(100);
         sound(false);
         sendMessage("code entered");
       }
@@ -165,7 +167,7 @@ void loop() {
     batteryLastCompute = millis();
     computeBatteryLevel();
 
-    if (abs(oldBatteryPcnt - batteryPcnt) > 1) {
+    if (abs(oldBatteryPcnt - batteryPcnt) >= 1) {
       sendBatteryLevel();
       oldBatteryPcnt = batteryPcnt;
     }

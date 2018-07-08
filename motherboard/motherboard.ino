@@ -39,6 +39,7 @@ unsigned long nrfLastSendTime = 0;
 String nrfSuccessMsgExpected = "";
 int timeBetweenSend = 500;
 bool newNrfMsgReceived = false;
+bool emergencySending = false;
 
 void setup() {
   // init pin
@@ -75,6 +76,8 @@ void setup() {
   }
   attachInterrupt(digitalPinToInterrupt(PIN_NRF_INTERRUPT), newNrfMsg, FALLING);
 
+  emergencySending = false;
+  
   Serial.println("Doxeoboard started");
 
   // play buzzer
@@ -110,7 +113,7 @@ void loop() {
 
   // DIO reception
   unsigned long sender = 0;
-  if ((sender = dio.read()) != 0) {  // take 50ms
+  if (!emergencySending && (sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
       send("dio", "", sender);
@@ -123,7 +126,7 @@ void loop() {
   }
 
   // RF reception
-  if (rcSwitch.available()) {
+  if (!emergencySending && rcSwitch.available()) {
     unsigned long sendValue = rcSwitch.getReceivedValue();
     if (sendValue != 0 && sendValue != oldSenderRf) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
@@ -147,6 +150,7 @@ void loop() {
       
       // success returned no need to send again
       if (message == nrfSuccessMsgExpected) {
+        emergencySending = false;
         nrfSendNumber = 0;
       } else {
         char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
@@ -165,8 +169,7 @@ void loop() {
   }
   
   // Send Nrf message
-  if (nrfSendNumber > 0 && ((millis() - nrfLastSendTime >= timeBetweenSend) || millis() < nrfLastSendTime)) {
-    //Serial.println("send message " + String(nrfSendNumber) + " : " + String(millis() - nrfLastSendTime));
+  if (nrfSendNumber > 0 && (millis() - nrfLastSendTime) >= timeBetweenSend) {
     Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
     Mirf.send(nrfBufferToSend);
     while (Mirf.isSending()); // take 40ms with 15x retry
@@ -186,6 +189,8 @@ void loop() {
     
     // no success message received
     if (nrfSendNumber == 0) {
+      emergencySending = false;
+      nrfSuccessMsgExpected = "";
       Serial.println("error;the message " + String((char*) nrfBufferToSend) + " has not been received acknowledge!");
     }
   }
@@ -213,14 +218,17 @@ void loop() {
     }
     
     if (parseCommand(queue,';',0) == "nrf2") {
-      nrfSendNumber = 100; // take 5s
+      nrfSendNumber = 100; // take 4,5s
       nrfSendMaxNumber = 100;
+      timeBetweenSend = 5;
+      emergencySending = true;
     } else {
       nrfSendNumber = 60;  // take 3s
       nrfSendMaxNumber = 60;
+      timeBetweenSend = 10;
+      emergencySending = false;
     }
     
-    timeBetweenSend = 10;
     Serial.println("Sending " + msgToSend);
   }
 
