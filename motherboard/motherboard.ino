@@ -15,6 +15,9 @@
 #define PIN_RF_RECEIVER 3
 #define PIN_RF_TRANSMITTER 4
 #define PIN_NRF_INTERRUPT 2
+#define PIN_SWITCH0 A0
+#define PIN_SWITCH1 A1
+#define PIN_SWITCH2 A2
 
 // Timer management
 Timer timer;
@@ -45,6 +48,14 @@ void setup() {
   // init pin
   pinMode(PIN_LED_YELLOW, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
+  pinMode(PIN_SWITCH0, OUTPUT);
+  pinMode(PIN_SWITCH1, OUTPUT);
+  pinMode(PIN_SWITCH2, OUTPUT);
+  digitalWrite(PIN_LED_YELLOW, LOW);
+  digitalWrite(PIN_BUZZER, LOW);
+  digitalWrite(PIN_SWITCH0, LOW);
+  digitalWrite(PIN_SWITCH1, LOW);
+  digitalWrite(PIN_SWITCH2, LOW);
 
   // init RF 433MhZ
   rcSwitch.enableReceive(digitalPinToInterrupt(PIN_RF_RECEIVER));
@@ -103,6 +114,13 @@ void loop() {
       Serial.println(command);
     } else if (commandType == "box" && commandName == "buzzer") {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
+      Serial.println(command);
+    } else if (commandType == "switch") {
+      if (commandValue == "on") {
+        enableSwitch(commandName.toInt(), true);
+      } else {
+        enableSwitch(commandName.toInt(), false);
+      }
       Serial.println(command);
     } else if (commandType == "name") {
       send("name", "doxeo_board", "v1.0.0");
@@ -244,6 +262,28 @@ void resetTemponDio() {
 void resetTemponRf() {
   oldSenderRf = 0;
   timerIdRfReceptor = -1;
+}
+
+void enableSwitch(char id, boolean on) {
+  if (id == 0) {
+    if (on) {
+        digitalWrite(PIN_SWITCH0, HIGH);
+      } else {
+        digitalWrite(PIN_SWITCH0, LOW);
+      }
+  } else if (id == 1) {
+    if (on) {
+        digitalWrite(PIN_SWITCH1, HIGH);
+      } else {
+        digitalWrite(PIN_SWITCH1, LOW);
+      }
+  } else if (id == 2) {
+    if (on) {
+        digitalWrite(PIN_SWITCH2, HIGH);
+      } else {
+        digitalWrite(PIN_SWITCH2, LOW);
+      }
+  }
 }
 
 void send(String type, String name, String value) {

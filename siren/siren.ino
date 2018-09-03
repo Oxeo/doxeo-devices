@@ -261,7 +261,7 @@ void manageSiren() {
     sound(true);
     sirenTime = millis();
     sirenState++;
-  } else if (sirenState == 0 && millis() - sirenTime >= 50) {
+  } else if (sirenState == 0 && millis() - sirenTime >= 5) {
     sound(false);
     sirenTime = millis();
     sirenState++;
@@ -269,7 +269,7 @@ void manageSiren() {
     sound(true);
     sirenTime = millis();
     sirenState++;
-  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 50) {
+  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 5) {
     sound(false);
     sirenTime = millis();
     sirenState++;
