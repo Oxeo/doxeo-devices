@@ -25,7 +25,7 @@ unsigned long tokenId = 0;
 unsigned long tokenIdTime = 0;
 
 // Battery sense
-unsigned long batteryLastCompute = 0;
+unsigned long batteryComputeCpt = 0;
 int batteryPcnt = 0;
 int oldBatteryPcnt = 0;
 float batteryV = 0.0;
@@ -83,7 +83,7 @@ void setup() {
   // init key interrupt
   attachInterrupt(digitalPinToInterrupt(KEY_1), keyInterrupt, FALLING);
 
-  batteryLastCompute = 43200000;
+  batteryComputeCpt = 0;
   batteryPcnt = 0;
   oldBatteryPcnt = 0;
   batteryV = 0.0;
@@ -163,8 +163,8 @@ void loop() {
         sendMessage("code entered");
       }
     }
-  } else if (millis() - batteryLastCompute >= 21600000) { // Check battery level every 6 hours
-    batteryLastCompute = millis();
+  } else if (batteryComputeCpt == 10000) { // Check battery level every 6 hours
+    batteryComputeCpt = 0;
     computeBatteryLevel();
 
     if (abs(oldBatteryPcnt - batteryPcnt) >= 1) {
@@ -172,13 +172,15 @@ void loop() {
       oldBatteryPcnt = batteryPcnt;
     }
   } else {
-    // Sleep 4S
     checkNewMsg = false;
+    batteryComputeCpt++;
+
+    // Sleep 2S
     Mirf.powerDown();
 #ifdef DEBUG
-    delay(4000);
+    delay(2000);
 #else
-    sleep(SLEEP_4S);
+    sleep(SLEEP_2S);
 #endif
 
     // enable reception during 15ms
