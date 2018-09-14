@@ -176,7 +176,7 @@ void loop() {
           sendMessage("p1", "stand by");
         } else if (pump1IsRunning == false && millis() > lastChangedWaterPump1Status + pump1AutoModeTimeOff) {
           startPump1(true);
-          sendMessage("p1", "stand by finished");
+          sendMessage("p1", "stand by done");
         }
       }
     }
@@ -210,10 +210,10 @@ void startPump1(bool start) {
 void startPump2(bool start) {
   if (start) {
     pump2IsRunning = true;
-    digitalWrite(WATER_PUMP2, LOW);
+    digitalWrite(WATER_PUMP2, HIGH);
   } else {
     pump2IsRunning = false;
-    digitalWrite(WATER_PUMP2, HIGH);
+    digitalWrite(WATER_PUMP2, LOW);
   }
 }
 
