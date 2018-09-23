@@ -194,7 +194,7 @@ void loop() {
     Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
     
     if (Mirf.sendWithSuccess == true) {
-      Serial.println(String((char *)nrfBufferToSend) + " send with success (" + String(nrfSendMaxNumber - nrfSendNumber + 1) + "x)");
+      Serial.println(String((char *)nrfBufferToSend) + " send (" + String(nrfSendMaxNumber - nrfSendNumber + 1) + "x)");
       
       if (timeBetweenSend < 500) {
         timeBetweenSend = 1000;
@@ -210,6 +210,7 @@ void loop() {
       emergencySending = false;
       nrfSuccessMsgExpected = "";
       Serial.println("error;the message " + String((char*) nrfBufferToSend) + " has not been received acknowledge!");
+      Serial.println("nrf;" + parseCommand(String((char*) nrfBufferToSend), ';', 1) + ";no_acknowledge");
     }
   }
   
@@ -247,7 +248,7 @@ void loop() {
       emergencySending = false;
     }
     
-    Serial.println("Sending " + msgToSend);
+    //Serial.println("Sending " + msgToSend);
   }
 
   // timer management
