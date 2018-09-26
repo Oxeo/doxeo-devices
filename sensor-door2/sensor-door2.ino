@@ -14,6 +14,8 @@
 #define DOOR 2
 #define BATTERY_SENSE A0
 
+enum Status {open, close, unknown};
+
 char* nodes[] = {DOXEO_ADDR_MOTHER, DOXEO_ADDR_SOUND};
 const int nbNodes = 2;
 int selectedNode = 0;
@@ -26,6 +28,8 @@ unsigned long tokenIdTime = 0;
 // Status
 bool knobInterrupt = false;
 bool doorInterrupt = false;
+bool ledEnable = true;
+Status doorStatus = unknown;
 
 // Battery sense
 unsigned long batteryComputeCpt = 0;
@@ -74,7 +78,7 @@ void setup() {
   }
 
   // init key interrupt
-  attachInterrupt(digitalPinToInterrupt(KNOB), knobInterruptHandle, RISING);
+  attachInterrupt(digitalPinToInterrupt(KNOB), knobInterruptHandle, CHANGE);
   attachInterrupt(digitalPinToInterrupt(DOOR), doorInterruptHandle, CHANGE);
 
   // init battey level
@@ -82,6 +86,12 @@ void setup() {
   batteryPcnt = 0;
   oldBatteryPcnt = 0;
   batteryV = 0.0;
+
+  // status
+  knobInterrupt = false;
+  doorInterrupt = false;
+  ledEnable = true;
+  doorStatus = unknown;
 
   selectedNode = 0;
   sendMessage("", "init done");
@@ -127,6 +137,14 @@ void loop() {
       sendAck(id);
       sendDoorStatus();
       sendDoorknobStatus();
+    } else if (message == "enable_led") {
+      sendAck(id);
+      ledEnable = true;
+      sendMessage("", "led enable");
+    } else if (message == "disable_led") {
+      sendAck(id);
+      ledEnable = false;
+      sendMessage("", "led disable");
     } else if (message == "battery") { // send battery level
       sendAck(id);
       computeBatteryLevel();
@@ -136,22 +154,17 @@ void loop() {
       sendMessage("", "args error");
     }
   } else if (knobInterrupt || doorInterrupt) {
-    delay(50);
+    delay(100);
     
-    if (knobInterrupt && digitalRead(KNOB) == HIGH) {
-      digitalWrite(LED, HIGH);
-      sendMessage("knob", "moving");
+    if (knobInterrupt) {
+      sendDoorknobStatus();
+      knobInterrupt = false;
     }
-
-    delay(500);
 
     if (doorInterrupt) {
       sendDoorStatus();
+      doorInterrupt = false;
     }
-
-    digitalWrite(LED, LOW);
-    knobInterrupt = false;
-    doorInterrupt = false;
   } else if (batteryComputeCpt == 10000) { // Check battery level every 6 hours
     batteryComputeCpt = 0;
     computeBatteryLevel();
@@ -177,17 +190,23 @@ void loop() {
 }
 
 void sendDoorStatus() {
-  if (digitalRead(DOOR) == HIGH) {
+  if (digitalRead(DOOR) == HIGH && doorStatus != open) {
     sendMessage("", "open");
-  } else {
+    doorStatus = open;
+  } else if (digitalRead(DOOR) == LOW && doorStatus != close) {
+    doorStatus = close;
     sendMessage("", "close");
   }
 }
 
 void sendDoorknobStatus() {
   if (digitalRead(KNOB) == HIGH) {
+    if (ledEnable) {
+        digitalWrite(LED, HIGH);
+    }
     sendMessage("knob", "moving");
   } else {
+    digitalWrite(LED, LOW);
     sendMessage("knob", "stable");
   }
 }
