@@ -1,13 +1,8 @@
 #include <RCSwitch.h>
 #include <OxeoDio.h>
 #include <Timer.h>
-#include <Mirf.h>
-#include <QueueList.h> // https://playground.arduino.cc/Code/QueueList
+#include "Nrf.h"
 
-#include <SPI.h>      // Pour la communication via le port SPI
-#include <Mirf.h>     // Pour la gestion de la communication
-#include <nRF24L01.h> // Pour les définitions des registres du nRF24L01
-#include <MirfHardwareSpiDriver.h> // Pour la communication SPI (ne cherchez pas à comprendre)
 #include <DoxeoConfig.h>
 
 #define PIN_LED_YELLOW A5
@@ -18,6 +13,8 @@
 #define PIN_SWITCH0 A0
 #define PIN_SWITCH1 A1
 #define PIN_SWITCH2 A2
+
+Nrf nrf(PIN_NRF_INTERRUPT);
 
 // Timer management
 Timer timer;
@@ -32,18 +29,6 @@ RCSwitch rcSwitch = RCSwitch();
 unsigned long oldSenderRf = 0;
 int timerIdRfReceptor = -1;
 
-// NRF
-QueueList <String> nrfSendQueue;
-byte nrfBufferToSend[32];
-unsigned long nrfSendId = 1;
-int nrfSendNumber = 0;
-int nrfSendMaxNumber = 0;
-unsigned long nrfLastSendTime = 0;
-String nrfSuccessMsgExpected = "";
-int timeBetweenSend = 500;
-bool newNrfMsgReceived = false;
-bool emergencySending = false;
-
 void setup() {
   // init pin
   pinMode(PIN_LED_YELLOW, OUTPUT);
@@ -57,6 +42,8 @@ void setup() {
   digitalWrite(PIN_SWITCH1, LOW);
   digitalWrite(PIN_SWITCH2, LOW);
 
+  nrf.init();
+
   // init RF 433MhZ
   rcSwitch.enableReceive(digitalPinToInterrupt(PIN_RF_RECEIVER));
   rcSwitch.enableTransmit(PIN_RF_TRANSMITTER);
@@ -67,27 +54,6 @@ void setup() {
 
   // init serial
   Serial.begin(9600);
-
-  nrfSendQueue.setPrinter (Serial);
-
-  // init NRF
-  Mirf.cePin = 9;
-  Mirf.csnPin = 10;
-  Mirf.spi = &MirfHardwareSpi; // Hardware SPI: MISO -> 12, MOSI -> 11, SCK -> 13
-  Mirf.init();
-  Mirf.channel = DOXEO_CHANNEL; // Choix du canal de communication (128 canaux disponibles, de 0 à 127)
-  Mirf.setRADDR((byte *) DOXEO_ADDR_MOTHER);
-  Mirf.payload = 32; // Taille d'un message (maximum 32 octets)
-  Mirf.config(); // Sauvegarde la configuration dans le module radio
-  Mirf.configRegister(RF_SETUP, 0x26); // to send much longeur
-  Mirf.configRegister(SETUP_RETR, 0x3F);  // retry 15x
-
-  if (digitalRead(PIN_NRF_INTERRUPT) == LOW) {
-    Mirf.configRegister(STATUS, 0x70); // clear IRQ register
-  }
-  attachInterrupt(digitalPinToInterrupt(PIN_NRF_INTERRUPT), newNrfMsg, FALLING);
-
-  emergencySending = false;
   
   Serial.println("Doxeoboard started");
 
@@ -100,12 +66,12 @@ void loop() {
   // Command reception
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
-    String commandType = parseCommand(command, ';', 0);
-    String commandName = parseCommand(command, ';', 1);
-    String commandValue = parseCommand(command, ';', 2);
+    String commandType = Nrf::parseCommand(command, ';', 0);
+    String commandName = Nrf::parseCommand(command, ';', 1);
+    String commandValue = Nrf::parseCommand(command, ';', 2);
     
     if (commandType == "nrf" || commandType == "nrf2") {
-      nrfSendQueue.push(command);
+      nrf.sendMessage(command);
     } else if (commandType == "dio") {
       dio.send(commandValue.toInt());
       Serial.println(command);
@@ -131,7 +97,7 @@ void loop() {
 
   // DIO reception
   unsigned long sender = 0;
-  if (!emergencySending && (sender = dio.read()) != 0) {  // take 50ms
+  if (!nrf.emergencySending() && (sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
       send("dio", "", sender);
@@ -144,7 +110,7 @@ void loop() {
   }
 
   // RF reception
-  if (!emergencySending && rcSwitch.available()) {
+  if (!nrf.emergencySending() && rcSwitch.available()) {
     unsigned long sendValue = rcSwitch.getReceivedValue();
     if (sendValue != 0 && sendValue != oldSenderRf) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
@@ -158,98 +124,7 @@ void loop() {
     rcSwitch.resetAvailable();
   }
   
-  // NRF reception
-  if (newNrfMsgReceived) {
-    while (Mirf.dataReady()) {
-      byte byteMsg[32];
-      Mirf.getData(byteMsg);
-      String message = String((char *)byteMsg);
-      timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-      
-      // success returned no need to send again
-      if (message == nrfSuccessMsgExpected) {
-        emergencySending = false;
-        nrfSendNumber = 0;
-      } else {
-        char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
-        if (destAddressIndex > 0) {
-          // remove destination address
-          message.remove(destAddressIndex, 6);
-        }
-        Serial.println("nrf;" + message);
-      }
-    };
-
-    newNrfMsgReceived = false;
-    if (digitalRead(PIN_NRF_INTERRUPT) == LOW) {
-      Mirf.configRegister(STATUS, 0x70); // clear IRQ register
-    }
-  }
-  
-  // Send Nrf message
-  if (nrfSendNumber > 0 && (millis() - nrfLastSendTime) >= timeBetweenSend) {
-    Mirf.configRegister(EN_RXADDR, 0x03); // only pipe 0 and 1 can received for ACK
-    Mirf.send(nrfBufferToSend);
-    while (Mirf.isSending()); // take 40ms with 15x retry
-    Mirf.configRegister(EN_RXADDR, 0x02); // only pipe 1 can received
-    
-    if (Mirf.sendWithSuccess == true) {
-      Serial.println(String((char *)nrfBufferToSend) + " send (" + String(nrfSendMaxNumber - nrfSendNumber + 1) + "x)");
-      
-      if (timeBetweenSend < 500) {
-        timeBetweenSend = 1000;
-        nrfSendNumber = 2;
-      }
-    }
-    
-    nrfSendNumber--;
-    nrfLastSendTime = millis();
-    
-    // no success message received
-    if (nrfSendNumber == 0) {
-      emergencySending = false;
-      nrfSuccessMsgExpected = "";
-      Serial.println("error;the message " + String((char*) nrfBufferToSend) + " has not been received acknowledge!");
-      Serial.println("nrf;" + parseCommand(String((char*) nrfBufferToSend), ';', 1) + ";no_acknowledge");
-    }
-  }
-  
-  // New Nrf message to send
-  if (nrfSendNumber == 0 && !nrfSendQueue.isEmpty()) {
-    String queue = nrfSendQueue.pop();
-    
-    // Set destination address
-    byte nrfByteAddress[6];
-    parseCommand(queue,';',1).getBytes(nrfByteAddress, 6);
-    Mirf.setTADDR(nrfByteAddress);
-    
-    // Prepare message to send
-    String msgToSend = String(DOXEO_ADDR_MOTHER) + ';' + parseCommand(queue, ';', 1) + ";" + nrfSendId + ";" + parseCommand(queue, ';', 2);
-    msgToSend.getBytes(nrfBufferToSend, 32);
-    
-    // prepare success message to be returned
-    nrfSuccessMsgExpected = parseCommand(queue, ';', 1) + ";" + String(DOXEO_ADDR_MOTHER) + ";" + nrfSendId + ";success";
-    
-    // increase message ID
-    nrfSendId++;
-    if (nrfSendId == 0) {
-      nrfSendId++;
-    }
-    
-    if (parseCommand(queue,';',0) == "nrf2") {
-      nrfSendNumber = 100; // take 4,5s
-      nrfSendMaxNumber = 100;
-      timeBetweenSend = 5;
-      emergencySending = true;
-    } else {
-      nrfSendNumber = 60;  // take 3s
-      nrfSendMaxNumber = 60;
-      timeBetweenSend = 10;
-      emergencySending = false;
-    }
-    
-    //Serial.println("Sending " + msgToSend);
-  }
+  nrf.update();
 
   // timer management
   timer.update();
@@ -299,24 +174,3 @@ void send(String type, String name, float value) {
   Serial.println(type + ";" + name + ";" + value);
 }
 
-String parseCommand(String data, char separator, int index)
-{
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length()-1;
-
-  for(int i=0; i<=maxIndex && found<=index; i++){
-    if(data.charAt(i)==separator || i==maxIndex){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
-    }
-  }
-
-  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
-
-void newNrfMsg()
-{
-  newNrfMsgReceived = true;
-}
