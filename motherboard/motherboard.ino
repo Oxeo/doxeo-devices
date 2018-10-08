@@ -100,7 +100,7 @@ void loop() {
   if (!nrf.emergencySending() && (sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-      send("dio", "", sender);
+      send("dio", String(sender), "");
       oldSenderDio = sender;
       if (timerIdDioReceptor != -1) {
         timer.stop(timerIdDioReceptor);
@@ -114,7 +114,7 @@ void loop() {
     unsigned long sendValue = rcSwitch.getReceivedValue();
     if (sendValue != 0 && sendValue != oldSenderRf) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-      send("rf", "", sendValue);
+      send("rf", String(sendValue), "");
       oldSenderRf = sendValue;
       if (timerIdRfReceptor != -1) {
         timer.stop(timerIdRfReceptor);
@@ -163,14 +163,6 @@ void enableSwitch(char id, boolean on) {
 }
 
 void send(String type, String name, String value) {
-  Serial.println(type + ";" + name + ";" + value);
-}
-
-void send(String type, String name, unsigned long value) {
-  Serial.println(type + ";" + name + ";" + value);
-}
-
-void send(String type, String name, float value) {
   Serial.println(type + ";" + name + ";" + value);
 }
 
