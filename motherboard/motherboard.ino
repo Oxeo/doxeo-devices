@@ -72,11 +72,11 @@ void loop() {
     
     if (commandType == "nrf" || commandType == "nrf2") {
       nrf.sendMessage(command);
-    } else if (commandType == "dio") {
-      dio.send(commandValue.toInt());
+    } else if (commandType == "dio" && commandName != "") {
+      dio.send(commandName.toInt());
       Serial.println(command);
-    } else if (commandType == "rf") {
-      rcSwitch.send(commandValue.toInt(), 24);
+    } else if (commandType == "rf" && commandName != "") {
+      rcSwitch.send(commandName.toInt(), 24);
       Serial.println(command);
     } else if (commandType == "box" && commandName == "buzzer") {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
@@ -100,7 +100,7 @@ void loop() {
   if (!nrf.emergencySending() && (sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-      send("dio", String(sender), "");
+      send("dio", String(sender), "event");
       oldSenderDio = sender;
       if (timerIdDioReceptor != -1) {
         timer.stop(timerIdDioReceptor);
@@ -114,7 +114,7 @@ void loop() {
     unsigned long sendValue = rcSwitch.getReceivedValue();
     if (sendValue != 0 && sendValue != oldSenderRf) {
       timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
-      send("rf", String(sendValue), "");
+      send("rf", String(sendValue), "event");
       oldSenderRf = sendValue;
       if (timerIdRfReceptor != -1) {
         timer.stop(timerIdRfReceptor);
