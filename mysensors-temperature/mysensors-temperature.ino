@@ -4,6 +4,10 @@
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
 
+// Set LOW transmit power level as default, if you have an amplified NRF-module and
+// power your radio separately with a good regulator you can turn up PA level.
+#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+
 #include <MySensors.h>
 #include <SPI.h>
 #include <OneWire.h>
@@ -87,7 +91,7 @@ float getDallasTemperature() {
   sleep(400);
 
   // Fetch and round temperature to one decimal
-  float temperature = static_cast<float>(static_cast<int>(sensors.getTempC(dallasSensorAddress)) * 10.) / 10.;
+  float temperature = sensors.getTempC(dallasSensorAddress);
 
   // set power pin for DS18B20 to input before sleeping, saves power
   digitalWrite(PIN_ALIM_TEMPERATURE, LOW);
