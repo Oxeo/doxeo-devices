@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -10,12 +10,6 @@
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
-
-// Define channel
-//#define MY_RF24_CHANNEL (5)
-
-// Define sensor nodeId addresses
-//#define MY_RF24_BASE_RADIO_ID 0x79,0xEB,0xBB,0x35,0xFE
 
 // RF24 PA level
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
