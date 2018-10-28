@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -28,6 +28,7 @@ DFRobotDFPlayerMini dfPlayer;
 
 // Timer
 unsigned long stopTime = 0;
+bool isOn = false;
 
 MyMessage msg(0, V_CUSTOM);
 
@@ -45,6 +46,7 @@ void setup() {
   // play sound
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
+  isOn = true;
   stopTime = millis() + 10 * 60000; // set active during 10 minutes
 }
 
@@ -67,9 +69,8 @@ void receive(const MyMessage &myMsg)
     int volume = parseMsg(message, '-', 2).toInt();
 
     if (message == "stop") {
-      dfPlayer.stop();
-      stopTime = millis() + 5000; // stop after 5 secondes
-      //send(msg.set("stopped"));
+      stopTime = millis(); // stop now
+      send(msg.set("stopped"));
     } else if (folder < 1 || folder > 99) {
       send(msg.set("folder arg error"));
     } else if (sound < 1 || sound > 999) {
@@ -81,29 +82,33 @@ void receive(const MyMessage &myMsg)
       digitalWrite(POWER_AMPLIFIER, HIGH);
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
+      isOn = true;
       stopTime = millis() + 10 * 60000; // set active during 10 minutes
 
-      //send(msg.set("started"));
+      send(msg.set("started"));
     }
   }
 }
 
 void loop() {
-  // Sleep when timer elapsed
-  if (stopTime < millis()) {
-    dfPlayer.stop();
-    digitalWrite(POWER_AMPLIFIER, LOW);  // stop amplifier
-    wait(0);
-  }
+  if (isOn) {
+    if (stopTime < millis()) {
+      dfPlayer.stop();
+      wait(1000);
+      digitalWrite(POWER_AMPLIFIER, LOW);  // stop amplifier
+      isOn = false;
+    } else if (dfPlayer.available()) { // Get DFPlayer status
+      char errorNb = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
 
-  // Get DFPlayer status
-  if (dfPlayer.available()) {
-    char errorNb = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
-
-    // Play finished
-    if (errorNb == 6) {
-      stopTime = millis() + 5000; // stop after 5 secondes
+      // Play finished
+      if (errorNb == 6) {
+        stopTime = millis() + 5000; // stop after 5 secondes
+      }
     }
+    
+    wait (100);
+  } else {
+    wait(0);
   }
 }
 
