@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
@@ -32,6 +32,8 @@ OneWire oneWire(PIN_TEMPERATURE);
 DallasTemperature sensors(&oneWire);
 byte dallasSensorAddress[8];
 
+char retryNb = 0;
+
 MyMessage msg(0, V_TEMP);
 
 void before()
@@ -40,12 +42,14 @@ void before()
 }
 
 void setup() {
+  randomSeed(analogRead(0));//initialise la séquence aléatoir
   initializeDallasSensor();
+  retryNb = 0;
 }
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Temperature Sensor", "1.0");
+  sendSketchInfo("Temperature Sensor", "1.1");
 
   // Present sensor to controller
   present(0, S_TEMP);
@@ -56,9 +60,17 @@ void loop() {
   float temp = getDallasTemperature();
 
   // send
-  send(msg.set(temp, 1));
+  bool success = send(msg.set(temp, 1));
 
-  sleep(600000); // 10 minutes
+  if (success || retryNb > 3) {
+    if (success) {
+      retryNb = 0;
+    }
+    smartSleep(600000); // 10 minutes
+  } else {
+    retryNb++;
+    smartSleep(30000 + random(1000));
+  }
 }
 
 void initializeDallasSensor() {
