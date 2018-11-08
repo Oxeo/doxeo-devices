@@ -62,7 +62,6 @@ void Nrf::checkNewMessage()
       if (message == _successMsgExpected) {
         _emergencySending = false;
         _remainingSend = 0;
-        Serial.println("success received");
       } else {
         char destAddressIndex = message.indexOf(String(DOXEO_ADDR_MOTHER) + ";");
         if (destAddressIndex > 0) {
@@ -115,7 +114,7 @@ void Nrf::unstackMessageToSend()
     _tryNumber = 5;
     _ackReceived = false;
 
-    Serial.println("Sending " + msgToSend);
+    //Serial.println("Sending " + msgToSend);
   }
 }
 
