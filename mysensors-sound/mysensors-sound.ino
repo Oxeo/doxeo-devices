@@ -27,7 +27,7 @@ SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
 
 // Timer
-unsigned long stopTime = 0;
+unsigned long sleepTimer = 0;
 bool isOn = false;
 
 MyMessage msg(0, V_CUSTOM);
@@ -47,7 +47,7 @@ void setup() {
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
   isOn = true;
-  stopTime = millis() + 10 * 60000; // set active during 10 minutes
+  sleepTimer = millis() + 10 * 60000; // set active during 10 minutes
 }
 
 void presentation() {
@@ -69,8 +69,9 @@ void receive(const MyMessage &myMsg)
     int volume = parseMsg(message, '-', 2).toInt();
 
     if (message == "stop") {
-      stopTime = millis(); // stop now
-      send(msg.set("stopped"));
+      dfPlayer.stop();
+    } else if (message == "ping") {
+      send(msg.set("pong"));
     } else if (folder < 1 || folder > 99) {
       send(msg.set("folder arg error"));
     } else if (sound < 1 || sound > 999) {
@@ -83,18 +84,16 @@ void receive(const MyMessage &myMsg)
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
       isOn = true;
-      stopTime = millis() + 10 * 60000; // set active during 10 minutes
+      sleepTimer = millis() + 10 * 60000; // set active during 10 minutes
 
-      send(msg.set("started"));
+      send(msg.set("Play started"));
     }
   }
 }
 
 void loop() {
   if (isOn) {
-    if (stopTime < millis()) {
-      dfPlayer.stop();
-      wait(1000);
+    if (sleepTimer < millis()) {
       digitalWrite(POWER_AMPLIFIER, LOW);  // stop amplifier
       isOn = false;
     } else if (dfPlayer.available()) { // Get DFPlayer status
@@ -102,11 +101,11 @@ void loop() {
 
       // Play finished
       if (errorNb == 6) {
-        stopTime = millis() + 5000; // stop after 5 secondes
+        sleepTimer = millis() + 5000; // stop after 5 secondes
       }
     }
     
-    wait (100);
+    wait (200);
   } else {
     wait(0);
   }

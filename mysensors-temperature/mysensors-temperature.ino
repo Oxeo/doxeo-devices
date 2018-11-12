@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
@@ -66,10 +66,10 @@ void loop() {
     if (success) {
       retryNb = 0;
     }
-    smartSleep(600000); // 10 minutes
+    sleep(600000); // 10 minutes
   } else {
     retryNb++;
-    smartSleep(30000 + random(1000));
+    sleep(30000 + random(1000));
   }
 }
 
