@@ -22,11 +22,12 @@ void setup()
 
   // init PIN
   pinMode(A0, INPUT);
+  pinMode(8, INPUT);
 }
 
 void presentation()
 {
-  sendSketchInfo("Door 2", "1.0");
+  sendSketchInfo("Door 2", "1.1");
   present(PRIMARY_CHILD_ID, S_DOOR);
 }
 
@@ -43,7 +44,16 @@ void loop()
 
   if (value != sentValue) {
     // Value has changed from last transmission, send the updated value
-    send(msg.set(value == HIGH));
+    for (char i=0; i<5;i++) {
+      bool success = send(msg.set(value == HIGH));
+
+      if (success) {
+        i = 100;
+      } else {
+        wait(100);
+      }
+    }
+
     sentValue = value;
   }
 
