@@ -35,7 +35,7 @@ static Vcc vcc(VccCorrection);
 void presentation()  
 { 
   // Send the sketch info to the gateway
-  sendSketchInfo("TemperatureAndHumidity", "1.0");
+  sendSketchInfo("TemperatureAndHumidity", "1.1");
 
   // Present sensors as children to gateway
   present(CHILD_ID_HUM, S_HUM,   "Humidity");
@@ -77,7 +77,7 @@ void loop()
   static MyMessage msgTemp(CHILD_ID_TEMP, V_TEMP);
 
   send(msgTemp.set(temperature, 1));
-  send(msgHum.set(humidity, 1));
+  send(msgHum.set(humidity, 0));
 
 #ifdef REPORT_BATTERY_LEVEL
   const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + vcc.Read_Perc(VccMin, VccMax));
