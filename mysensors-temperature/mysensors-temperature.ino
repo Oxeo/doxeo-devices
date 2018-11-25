@@ -1,12 +1,9 @@
 // Enable debug prints to serial monitor
 //#define MY_DEBUG
 
-// Enable and select radio type attached
-#define MY_RADIO_NRF24
-
-// Set LOW transmit power level as default, if you have an amplified NRF-module and
-// power your radio separately with a good regulator you can turn up PA level.
+#define MY_RADIO_RF24
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_TRANSPORT_MAX_TX_FAILURES (3u)
 
 #include <MySensors.h>
 #include <SPI.h>
@@ -18,11 +15,11 @@
 #define SENSOR_CONFIGURATION 2
 
 #if SENSOR_CONFIGURATION == 1
-  #define PIN_TEMPERATURE 3
-  #define PIN_ALIM_TEMPERATURE 4
+#define PIN_TEMPERATURE 3
+#define PIN_ALIM_TEMPERATURE 4
 #elif SENSOR_CONFIGURATION == 2
-  #define PIN_TEMPERATURE 4
-  #define PIN_ALIM_TEMPERATURE 5
+#define PIN_TEMPERATURE 4
+#define PIN_ALIM_TEMPERATURE 5
 #endif
 
 #define TEMPERATURE_PRECISION 11 //Max 12 bit, min 9 bit
@@ -33,13 +30,10 @@ DallasTemperature sensors(&oneWire);
 byte dallasSensorAddress[8];
 
 char retryNb = 0;
+float temp = 0.0;
+bool success = false;
 
 MyMessage msg(0, V_TEMP);
-
-void before()
-{
-
-}
 
 void setup() {
   randomSeed(analogRead(0));//initialise la séquence aléatoir
@@ -49,27 +43,31 @@ void setup() {
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Temperature Sensor", "1.1");
+  sendSketchInfo("Temperature Sensor", "1.2");
 
   // Present sensor to controller
   present(0, S_TEMP);
 }
 
 void loop() {
-  // take temperature
-  float temp = getDallasTemperature();
+  temp = getDallasTemperature();
+  delay(100);
+  success = false;
+  
+  while (!success) {
+    success = send(msg.set(temp, 1));
 
-  // send
-  bool success = send(msg.set(temp, 1));
-
-  if (success || retryNb > 3) {
     if (success) {
       retryNb = 0;
+      sleep(600000); // 10 minutes
+    } else {
+      if (retryNb < 5) {
+        delay(random(500));
+        retryNb++;
+      } else {
+        success = true;
+      }
     }
-    sleep(600000); // 10 minutes
-  } else {
-    retryNb++;
-    sleep(30000 + random(1000));
   }
 }
 
