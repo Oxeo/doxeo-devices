@@ -28,3 +28,4 @@ pro.menu.cpu.1MHzatmega328.build.f_cpu=1000000L
 * Select "Arduino as ISP" in the Programmers menu
 * Select "Arduino Pro or Pro Mini" and "ATmega328 (1.8V, 1 MHz)"
 * Hit "Burn bootloader"
+* More info [here](https://forum.pimatic.org/topic/383/tips-battery-powered-sensors)
