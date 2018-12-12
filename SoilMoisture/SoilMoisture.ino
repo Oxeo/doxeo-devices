@@ -1,4 +1,4 @@
-#define MY_DEBUG
+//#define MY_DEBUG
 #define MY_RADIO_RF24
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 
@@ -68,7 +68,7 @@ void loop()
   }
 #endif
 
-  sleep(60000);
+  sleep(3600000); // 1H
 }
 
 int readSoil()
