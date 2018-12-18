@@ -16,7 +16,7 @@ pro.menu.cpu.1MHzatmega328.upload.speed=9600
 
 pro.menu.cpu.1MHzatmega328.bootloader.low_fuses=0x62
 pro.menu.cpu.1MHzatmega328.bootloader.high_fuses=0xD4
-pro.menu.cpu.1MHzatmega328.bootloader.extended_fuses=0x06
+pro.menu.cpu.1MHzatmega328.bootloader.extended_fuses=0xFE
 pro.menu.cpu.1MHzatmega328.bootloader.file=atmega/ATmegaBOOT_168_atmega328_pro_1MHz.hex
 
 pro.menu.cpu.1MHzatmega328.build.mcu=atmega328p

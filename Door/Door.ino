@@ -1,5 +1,6 @@
 // Enable debug prints to serial monitor
 //#define MY_DEBUG
+#define MY_BAUD_RATE (9600ul)
 
 #define REPORT_BATTERY_LEVEL
 
@@ -17,7 +18,7 @@ MyMessage msg(DOOR_ID, V_TRIPPED);
 #ifdef REPORT_BATTERY_LEVEL
 #include <Vcc.h>
 static uint8_t oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
-const float VccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
+const float VccMin        = 1.8;      // Minimum expected Vcc level, in Volts: Brownout at 1.8V    -> 0%
 const float VccMax        = 3.3; // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
 const float VccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
 static Vcc vcc(VccCorrection);
@@ -36,7 +37,7 @@ void setup()
 void presentation()
 {
   wait(500);
-  sendSketchInfo("Door 2", "1.4");
+  sendSketchInfo("Door 2", "1.5");
   wait(500);
   present(DOOR_ID, S_DOOR);
 }

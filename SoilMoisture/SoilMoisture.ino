@@ -38,6 +38,11 @@ void presentation()
 void loop()
 {
   int soil = readSoil();
+
+#ifdef MY_DEBUG
+  Serial.print(F("Soil "));
+  Serial.println(soil);
+#endif
   
   delay(1); // fix mysensors bug
   for (char i = 0; i < 5; i++) {
@@ -68,13 +73,17 @@ void loop()
   }
 #endif
 
+#ifdef MY_DEBUG
+  delay(10000);
+#else
   sleep(3600000); // 1H
+#endif
 }
 
 int readSoil()
 {
   digitalWrite(SOIL_POWER, HIGH);
-  delay(10);
+  delay(100);
   int val = analogRead(SOIL_PIN);
   digitalWrite(SOIL_POWER, LOW);
   return val;
