@@ -10,6 +10,9 @@
 #define SOIL_PIN A0
 #define SOIL_POWER A1
 
+#define AD_MAX  500 // Max Analog Value
+#define AD_MIN  0    // Min Analog Value
+
 MyMessage msg(SOIL_ID, V_LEVEL);
 
 #ifdef REPORT_BATTERY_LEVEL
@@ -38,22 +41,17 @@ void presentation()
 void loop()
 {
   int soil = readSoil();
+  int soilPercent = map(soil, AD_MIN, AD_MAX, 0, 100);
 
 #ifdef MY_DEBUG
-  Serial.print(F("Soil "));
+  Serial.print(F("Soil: "));
   Serial.println(soil);
+  Serial.print("Soil percentage: ");
+  Serial.print(soilPercent);
+  Serial.println("%");
 #endif
   
-  delay(1); // fix mysensors bug
-  for (char i = 0; i < 5; i++) {
-    bool success = send(msg.set(soil));
-
-    if (success) {
-      i = 100;
-    } else {
-      delay(100);
-    }
-  }
+  send(msg.set(soilPercent));
 
 #ifdef REPORT_BATTERY_LEVEL
   const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + vcc.Read_Perc(VccMin, VccMax));
@@ -83,7 +81,7 @@ void loop()
 int readSoil()
 {
   digitalWrite(SOIL_POWER, HIGH);
-  delay(100);
+  delay(1000);
   int val = analogRead(SOIL_PIN);
   digitalWrite(SOIL_POWER, LOW);
   return val;
