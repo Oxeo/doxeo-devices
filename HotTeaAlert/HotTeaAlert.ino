@@ -7,24 +7,24 @@
 #include <MySensors.h>
 #include <Wire.h>  // A4 => SDA, A5 => SCL
 
-// Adresse par défaut du capteur IR
-#define I2C_ADDR 0x5A
-
+#define I2C_ADDR 0x5A // Adresse par défaut du capteur IR
 #define TEMP_ID 0
 #define TARGET_ID 1
-#define TEMP_POWER A1
-#define RED_LED_PIN 2
-#define GREEN_LED_PIN 3
-#define BLUE_LED_PIN 4
+#define STATE_ID 2
+#define TEMP_POWER A0
+#define RED_LED_PIN 3
+#define GREEN_LED_PIN 4
+#define BLUE_LED_PIN 5
 #define EEPROM_TARGET_TEMP 0
 
-MyMessage msg(TEMP_ID, V_TEMP);
+MyMessage temperatureMsg(TEMP_ID, V_TEMP);
+MyMessage stateMsg(STATE_ID, V_TEXT);
 
-enum State_enum {INIT, HOT, READY, COLD};
+enum State_enum {SLEEPING, STARTING, HOT, READY, COLD};
 
-float targetTemperature = 0;
+int targetTemperature = -100;
 int oldTemperature = -100;
-uint8_t state = INIT;
+uint8_t state = SLEEPING;
 unsigned long coldCpt = 0;
 
 #ifdef REPORT_BATTERY_LEVEL
@@ -51,26 +51,26 @@ void before()
   digitalWrite(BLUE_LED_PIN, HIGH);
   wait(500);
   digitalWrite(BLUE_LED_PIN, LOW);
+  
+  pinMode(RED_LED_PIN, INPUT);
+  pinMode(GREEN_LED_PIN, INPUT);
+  pinMode(BLUE_LED_PIN, INPUT);
 }
 
 void presentation()
 {
   sendSketchInfo("Hot Tea Alert", "1.0");
-  present(TEMP_ID, S_TEMP);
-  present(TARGET_ID, S_CUSTOM, "Target");
+  present(TEMP_ID, S_TEMP, "Tea temperature");
+  present(TARGET_ID, S_TEMP, "Target temperature");
+  present(STATE_ID, S_INFO, "State status");
 }
 
 void setup()
 {
-  state = INIT;
+  state = SLEEPING;
   coldCpt = 0;
   oldTemperature = -100;
-
-  targetTemperature = loadState(EEPROM_TARGET_TEMP);
-
-  if (targetTemperature < 30 || targetTemperature > 200) {
-    targetTemperature = 70;
-  }
+  targetTemperature = getTargetTemperature();
 
   // Initialisation du bus I2C
   Wire.begin();
@@ -98,72 +98,116 @@ void loop()
   Serial.println(temperature);
 #endif
 
-  if (oldTemperature != temperature) {
-    send(msg.set(temperature, 1));
-    oldTemperature = temperature;
-
-    if (temperature > targetTemperature && state != HOT) {
-      digitalWrite(RED_LED_PIN, HIGH);
-      digitalWrite(GREEN_LED_PIN, LOW);
-      digitalWrite(BLUE_LED_PIN, LOW);
-      state = HOT;
+  if (state == SLEEPING) {
+    if (temperature < 40) {
+      sleep(30000); // 30 seconds
+    } else {
+      pinMode(RED_LED_PIN, OUTPUT);
+      pinMode(GREEN_LED_PIN, OUTPUT);
+      pinMode(BLUE_LED_PIN, OUTPUT);
+      oldTemperature = -100;
+      state = STARTING;
       #ifdef MY_DEBUG
-        Serial.print(F("State 1"));
-      #endif
-    } else if (temperature <= targetTemperature
-               && temperature >= targetTemperature - 10
-               && state != READY) {
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, HIGH);
-      digitalWrite(BLUE_LED_PIN, LOW);
-      state = READY;
-      #ifdef MY_DEBUG
-        Serial.print(F("State 2"));
-      #endif
-    } else if (temperature < targetTemperature - 10 && state != COLD) {
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, LOW);
-      digitalWrite(BLUE_LED_PIN, HIGH);
-      coldCpt = 0;
-      state = COLD;
-      #ifdef MY_DEBUG
-        Serial.print(F("State 3"));
+        Serial.print(F("State: STARTING"));
       #endif
     }
-  }
-
-  if (state == COLD) {
-    coldCpt++;
-  }
-
-  if (coldCpt >= 600) {  // sleep after 10 minutes
-    digitalWrite(RED_LED_PIN, LOW);
-    digitalWrite(GREEN_LED_PIN, LOW);
-    digitalWrite(BLUE_LED_PIN, LOW);
-    pinMode(RED_LED_PIN, INPUT);
-    pinMode(GREEN_LED_PIN, INPUT);
-    pinMode(BLUE_LED_PIN, INPUT);
-    sleep(0);  // sleep forever
   } else {
-    sleep(1000);
-  }
+      if (oldTemperature != temperature) {
+        send(temperatureMsg.set(temperature));
+        oldTemperature = temperature;
+
+        if (temperature > targetTemperature && state != HOT) {
+          digitalWrite(RED_LED_PIN, HIGH);
+          digitalWrite(GREEN_LED_PIN, LOW);
+          digitalWrite(BLUE_LED_PIN, LOW);
+          send(stateMsg.set("HOT"));
+          state = HOT;
+          #ifdef MY_DEBUG
+            Serial.print(F("State: HOT"));
+          #endif
+        } else if (temperature <= targetTemperature
+                   && temperature >= targetTemperature - 10
+                   && state != READY) {
+          digitalWrite(RED_LED_PIN, LOW);
+          digitalWrite(GREEN_LED_PIN, HIGH);
+          digitalWrite(BLUE_LED_PIN, LOW);
+          send(stateMsg.set("READY"));
+          state = READY;
+          #ifdef MY_DEBUG
+            Serial.print(F("State: READY"));
+          #endif
+        } else if (temperature < targetTemperature - 10 && state != COLD) {
+          digitalWrite(RED_LED_PIN, LOW);
+          digitalWrite(GREEN_LED_PIN, LOW);
+          digitalWrite(BLUE_LED_PIN, HIGH);
+          send(stateMsg.set("COLD"));
+          coldCpt = 0;
+          state = COLD;
+          #ifdef MY_DEBUG
+            Serial.print(F("State: COLD"));
+          #endif
+        }
+      }
+
+      if (state == COLD) {
+        coldCpt++;
+      }
+
+      if (coldCpt >= 600) {  // sleep after 10 minutes
+        digitalWrite(RED_LED_PIN, LOW);
+        digitalWrite(GREEN_LED_PIN, LOW);
+        digitalWrite(BLUE_LED_PIN, LOW);
+        pinMode(RED_LED_PIN, INPUT);
+        pinMode(GREEN_LED_PIN, INPUT);
+        pinMode(BLUE_LED_PIN, INPUT);
+        send(stateMsg.set("SLEEPING"));
+        state = SLEEPING;
+        #ifdef MY_DEBUG
+            Serial.print(F("State: SLEEPING"));
+        #endif
+      } else {
+        sleep(1000);
+      }
+    }
 }
 
 void receive(const MyMessage &myMsg)
 {
   if (myMsg.sensor == TARGET_ID && myMsg.type == V_TEMP) {
-    float newTarget = myMsg.getFloat();
+    int newTarget = myMsg.getInt();
 
 #ifdef MY_DEBUG
     Serial.print(F("Target Temperature received: "));
     Serial.println(newTarget);
 #endif
 
-    if (newTarget > 30 && newTarget < 200 && targetTemperature != newTarget) {
+    if (newTarget >= 30 && newTarget <= 200 && targetTemperature != newTarget) {
       targetTemperature = newTarget;
       //saveState(EEPROM_TARGET_TEMP, newTarget);
+      
+      pinMode(RED_LED_PIN, OUTPUT);
+      for (char i = 0; i < 10; i++) {
+        if (i % 2 == 0) {
+          digitalWrite(RED_LED_PIN, HIGH);
+        } else {
+          digitalWrite(RED_LED_PIN, LOW);
+        }
+
+        delay(50);
+      }
+      pinMode(RED_LED_PIN, INPUT);
     }
   }
+}
+
+int getTargetTemperature() {
+  int result = loadState(EEPROM_TARGET_TEMP);
+
+  if (targetTemperature < 30 || targetTemperature > 200) {
+    result = 70;
+  }
+  
+  return result;
 }
 
 float getTemperature() {
