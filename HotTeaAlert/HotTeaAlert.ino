@@ -21,7 +21,7 @@ MyMessage stateMsg(STATE_ID, V_TEXT);
 MyMessage temperatureMsg(TEMP_ID, V_TEMP);
 
 enum State_enum {SLEEPING, STARTING, HOT, READY, COLD};
-const char *_stateString[] = {"Sleeping", "Starting", "Hot", "Ready", "Cold"};
+const char *STATE_STR[] = {"Sleeping", "Starting", "Hot", "Ready", "Cold"};
 
 int _targetTemperature = -100;
 int _oldTemperature = -100;
@@ -37,24 +37,10 @@ static Vcc _vcc(_vccCorrection);
 
 void before()
 {
-  pinMode(SWITCH_PIN, INPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(BLUE_LED_PIN, OUTPUT);
-
-  digitalWrite(RED_LED_PIN, HIGH);
-  wait(500);
-  digitalWrite(RED_LED_PIN, LOW);
-  digitalWrite(GREEN_LED_PIN, HIGH);
-  wait(500);
-  digitalWrite(GREEN_LED_PIN, LOW);
   digitalWrite(BLUE_LED_PIN, HIGH);
-  wait(500);
+  wait(1000);
   digitalWrite(BLUE_LED_PIN, LOW);
-
-  pinMode(RED_LED_PIN, INPUT);
-  pinMode(GREEN_LED_PIN, INPUT);
-  pinMode(BLUE_LED_PIN, INPUT);
 }
 
 void presentation()
@@ -66,15 +52,15 @@ void presentation()
 
 void setup()
 {
-  _state = SLEEPING;
-  _coldCpt = 0;
-  _oldTemperature = -100;
+  pinMode(SWITCH_PIN, INPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(BLUE_LED_PIN, OUTPUT);
   loadTargetTemperature();
   loadMode();
-
-  Wire.begin(); // Initialisation du bus I2C
-
-  reportBatteryLevel();
+  Wire.begin(); // Init I2C Bus
+  runningLight();
+  changeState(SLEEPING);
 }
 
 void loop()
@@ -96,13 +82,13 @@ void loop()
           } else {
             changeMode(1);
           }
+
+          pinMode(BLUE_LED_PIN, OUTPUT);
+          blinkBlueLed(_mode);
+          pinMode(BLUE_LED_PIN, INPUT);
         }
       }
     } else {
-      pinMode(RED_LED_PIN, OUTPUT);
-      pinMode(GREEN_LED_PIN, OUTPUT);
-      pinMode(BLUE_LED_PIN, OUTPUT);
-      _oldTemperature = -100;
       changeState(STARTING);
     }
   } else {
@@ -114,45 +100,30 @@ void loop()
       }
 
       if (temperature > _targetTemperature && _state != HOT) {
-        digitalWrite(RED_LED_PIN, HIGH);
-        digitalWrite(GREEN_LED_PIN, LOW);
-        digitalWrite(BLUE_LED_PIN, LOW);
         changeState(HOT);
       } else if (temperature <= _targetTemperature
                  && temperature >= _targetTemperature - 10
                  && _state != READY) {
-        digitalWrite(RED_LED_PIN, LOW);
-        digitalWrite(GREEN_LED_PIN, HIGH);
-        digitalWrite(BLUE_LED_PIN, LOW);
         changeState(READY);
       } else if (temperature < _targetTemperature - 10 && _state != COLD) {
-        digitalWrite(RED_LED_PIN, LOW);
-        digitalWrite(GREEN_LED_PIN, LOW);
-        digitalWrite(BLUE_LED_PIN, HIGH);
-        _coldCpt = 0;
         changeState(COLD);
       }
     }
 
     if (_state == COLD) {
       _coldCpt++;
+      
+      if (_coldCpt >= 600) {  // sleeping mode after 10 minutes
+        changeState(SLEEPING);
+      }
     }
 
-    if (_coldCpt >= 600) {  // sleep after 10 minutes
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, LOW);
-      digitalWrite(BLUE_LED_PIN, LOW);
-      pinMode(RED_LED_PIN, INPUT);
-      pinMode(GREEN_LED_PIN, INPUT);
-      pinMode(BLUE_LED_PIN, INPUT);
-      reportBatteryLevel();
-      changeState(SLEEPING);
-    } else {
-      if (sleep(0, FALLING, 1000) == 0) {
-        delay(500);
-        if (digitalRead(SWITCH_PIN) == LOW) {
-          saveTargetTemperature(temperature);
-        }
+    if (sleep(0, FALLING, 1000) == 0) {
+      delay(1000);
+      if (digitalRead(SWITCH_PIN) == LOW) {
+        saveTargetTemperature(temperature);
+        blinkRedLed();
+        changeState(STARTING);
       }
     }
   }
@@ -163,10 +134,44 @@ void changeState(uint8_t state) {
   
   #ifdef MY_DEBUG
       Serial.print(F("State: "));
-      Serial.println(_stateString[state]);
+      Serial.println(STATE_STR[state]);
   #endif
 
-  send(stateMsg.set(_stateString[state]));
+  send(stateMsg.set(STATE_STR[state]));
+  
+  switch (_state) {
+    case SLEEPING:
+      digitalWrite(RED_LED_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(BLUE_LED_PIN, LOW);
+      pinMode(RED_LED_PIN, INPUT);
+      pinMode(GREEN_LED_PIN, INPUT);
+      pinMode(BLUE_LED_PIN, INPUT);
+      reportBatteryLevel();
+      break;
+    case STARTING:
+      pinMode(RED_LED_PIN, OUTPUT);
+      pinMode(GREEN_LED_PIN, OUTPUT);
+      pinMode(BLUE_LED_PIN, OUTPUT);
+      _oldTemperature = -100;
+      break;
+    case HOT:
+      digitalWrite(RED_LED_PIN, HIGH);
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(BLUE_LED_PIN, LOW);
+      break;
+    case READY:
+      digitalWrite(RED_LED_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, HIGH);
+      digitalWrite(BLUE_LED_PIN, LOW);
+      break;
+    case COLD:
+      digitalWrite(RED_LED_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(BLUE_LED_PIN, HIGH);
+      _coldCpt = 0;
+      break;
+  }
 }
 
 void saveTargetTemperature(int temperature) {
@@ -181,26 +186,10 @@ void saveTargetTemperature(int temperature) {
   saveState(EEPROM_TARGET_TEMP, temperature);
   _targetTemperature = temperature;
 
-#ifdef MY_DEBUG
-  Serial.print(F("New target temperature: "));
-  Serial.println(_targetTemperature);
-#endif
-
-  digitalWrite(RED_LED_PIN, LOW);
-  digitalWrite(GREEN_LED_PIN, LOW);
-  digitalWrite(BLUE_LED_PIN, LOW);
-
-  for (char i = 0; i < 40; i++) {
-    if (i % 2 == 0) {
-      digitalWrite(RED_LED_PIN, HIGH);
-    } else {
-      digitalWrite(RED_LED_PIN, LOW);
-    }
-
-    delay(50);
-  }
-
-  digitalWrite(GREEN_LED_PIN, HIGH);
+  #ifdef MY_DEBUG
+    Serial.print(F("New target temperature saved: "));
+    Serial.println(_targetTemperature);
+  #endif
 }
 
 void loadTargetTemperature() {
@@ -210,10 +199,10 @@ void loadTargetTemperature() {
     _targetTemperature = 70;
   }
 
-#ifdef MY_DEBUG
-  Serial.print(F("Target Temperature in EEPROM: "));
-  Serial.println(_targetTemperature);
-#endif
+  #ifdef MY_DEBUG
+    Serial.print(F("Target Temperature in EEPROM: "));
+    Serial.println(_targetTemperature);
+  #endif
 }
 
 void loadMode() {
@@ -223,10 +212,10 @@ void loadMode() {
     _mode = 1;
   }
 
-#ifdef MY_DEBUG
-  Serial.print(F("Mode in EEPROM: "));
-  Serial.println(_mode);
-#endif
+  #ifdef MY_DEBUG
+    Serial.print(F("Mode in EEPROM: "));
+    Serial.println(_mode);
+  #endif
 }
 
 void changeMode(int mode) {
@@ -237,25 +226,10 @@ void changeMode(int mode) {
   saveState(EEPROM_MODE, mode);
   _mode = mode;
 
-#ifdef MY_DEBUG
-  Serial.print(F("New mode: "));
-  Serial.println(_mode);
-#endif
-
-  pinMode(BLUE_LED_PIN, OUTPUT);
-
-  for (char i = 0; i < _mode * 2; i++) {
-    if (i % 2 == 0) {
-      digitalWrite(BLUE_LED_PIN, HIGH);
-    } else {
-      digitalWrite(BLUE_LED_PIN, LOW);
-    }
-
-    delay(1000);
-  }
-
-  digitalWrite(BLUE_LED_PIN, LOW);
-  pinMode(BLUE_LED_PIN, INPUT);
+  #ifdef MY_DEBUG
+    Serial.print(F("New mode saved: "));
+    Serial.println(_mode);
+  #endif
 }
 
 float getTemperature() {
@@ -307,5 +281,53 @@ void reportBatteryLevel() {
     sendBatteryLevel(batteryPcnt);
     _oldBatteryPcnt = batteryPcnt;
   }
+}
+
+void runningLight() {
+  digitalWrite(RED_LED_PIN, HIGH);
+  wait(500);
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, HIGH);
+  wait(500);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(BLUE_LED_PIN, HIGH);
+  wait(500);
+  digitalWrite(BLUE_LED_PIN, LOW);
+}
+
+void blinkRedLed() {
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(BLUE_LED_PIN, LOW);
+
+  for (char i = 0; i < 40; i++) {
+    if (i % 2 == 0) {
+      digitalWrite(RED_LED_PIN, HIGH);
+    } else {
+      digitalWrite(RED_LED_PIN, LOW);
+    }
+
+    delay(50);
+  }
+
+  digitalWrite(RED_LED_PIN, LOW);
+}
+
+void blinkBlueLed(char numberOfBlink) {
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, LOW);
+  digitalWrite(BLUE_LED_PIN, LOW);
+
+  for (char i = 0; i < numberOfBlink * 2; i++) {
+    if (i % 2 == 0) {
+      digitalWrite(BLUE_LED_PIN, HIGH);
+    } else {
+      digitalWrite(BLUE_LED_PIN, LOW);
+    }
+
+    delay(1000);
+  }
+
+  digitalWrite(BLUE_LED_PIN, LOW);
 }
 
