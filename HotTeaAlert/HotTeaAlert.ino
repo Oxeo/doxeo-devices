@@ -58,7 +58,6 @@ void setup()
   pinMode(BLUE_LED_PIN, OUTPUT);
   loadTargetTemperature();
   loadMode();
-  Wire.begin(); // Init I2C Bus
   runningLight();
   changeState(SLEEPING);
 }
@@ -102,10 +101,10 @@ void loop()
       if (temperature > _targetTemperature && _state != HOT) {
         changeState(HOT);
       } else if (temperature <= _targetTemperature
-                 && temperature >= _targetTemperature - 10
+                 && temperature >= _targetTemperature - 5
                  && _state != READY) {
         changeState(READY);
-      } else if (temperature < _targetTemperature - 10 && _state != COLD) {
+      } else if (temperature < _targetTemperature - 5 && _state != COLD) {
         changeState(COLD);
       }
     }
@@ -113,7 +112,7 @@ void loop()
     if (_state == COLD) {
       _coldCpt++;
       
-      if (_coldCpt >= 600) {  // sleeping mode after 10 minutes
+      if (_coldCpt >= 120) {  // sleeping mode after 10 minutes
         changeState(SLEEPING);
       }
     }
@@ -196,7 +195,7 @@ void loadTargetTemperature() {
   _targetTemperature = loadState(EEPROM_TARGET_TEMP);
 
   if (_targetTemperature < 30 || _targetTemperature > 200) {
-    _targetTemperature = 70;
+    _targetTemperature = 60;
   }
 
   #ifdef MY_DEBUG
@@ -235,8 +234,9 @@ void changeMode(int mode) {
 float getTemperature() {
   pinMode(TEMP_POWER, OUTPUT);
   digitalWrite(TEMP_POWER, HIGH);
-  sleep(30);
-
+  sleep(50);
+  Wire.begin(); // Init I2C Bus
+  
   // Données brute de température
   uint16_t data;
 
@@ -258,7 +258,7 @@ float getTemperature() {
   float tempData = (tempFactor * data) - 0.01;
   float celsius = tempData - 273.15; // Conversion des degrés Kelvin en degrés Celsius
 
-  // set power pin for DS18B20 to input before sleeping, saves power
+  // set power pin to input before sleeping, saves power
   digitalWrite(TEMP_POWER, LOW);
   pinMode(TEMP_POWER, INPUT);
 
