@@ -1,4 +1,4 @@
-#define MY_DEBUG
+//#define MY_DEBUG
 #define MY_RADIO_RF24
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 
@@ -27,6 +27,7 @@ int _targetTemperature = -100;
 int _oldTemperature = -100;
 uint8_t _state = SLEEPING;
 unsigned long _coldCpt = 0;
+unsigned long _readyCpt = 0;
 int _mode = 1;
 
 static uint8_t _oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
@@ -65,7 +66,7 @@ void setup()
 void loop()
 {
   int temperature = round(getTemperature());
-
+  
   #ifdef MY_DEBUG
     Serial.print(F("Temperature: "));
     Serial.println(temperature);
@@ -109,7 +110,14 @@ void loop()
       }
     }
 
-    if (_state == COLD) {
+    if (_state == READY) {
+      if (_readyCpt > 0) {
+        _readyCpt--;
+        if (_readyCpt == 0) {
+          send(stateMsg.set("Ready_Alert"));
+        }
+      }
+    } else if (_state == COLD) {
       _coldCpt++;
       
       if (_coldCpt >= 120) {  // sleeping mode after 10 minutes
@@ -129,16 +137,16 @@ void loop()
 }
 
 void changeState(uint8_t state) {
-  _state = state;
-  
   #ifdef MY_DEBUG
       Serial.print(F("State: "));
       Serial.println(STATE_STR[state]);
   #endif
 
-  send(stateMsg.set(STATE_STR[state]));
+  if (_mode == 2) {
+    send(stateMsg.set(STATE_STR[state]));
+  }
   
-  switch (_state) {
+  switch (state) {
     case SLEEPING:
       digitalWrite(RED_LED_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, LOW);
@@ -163,6 +171,11 @@ void changeState(uint8_t state) {
       digitalWrite(RED_LED_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, HIGH);
       digitalWrite(BLUE_LED_PIN, LOW);
+      if (_state == HOT) {
+        _readyCpt = 5;          
+      } else {
+        _readyCpt = 0;
+      }
       break;
     case COLD:
       digitalWrite(RED_LED_PIN, LOW);
@@ -171,6 +184,8 @@ void changeState(uint8_t state) {
       _coldCpt = 0;
       break;
   }
+
+  _state = state;
 }
 
 void saveTargetTemperature(int temperature) {
