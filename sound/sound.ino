@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -9,7 +9,7 @@
 #define MY_RF24_IRQ_PIN (2)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 // Enable repeater functionality
 #define MY_REPEATER_FEATURE
@@ -71,13 +71,13 @@ void receive(const MyMessage &myMsg)
     if (message == "stop") {
       dfPlayer.stop();
     } else if (message == "ping") {
-      send(msg.set("pong"));
+      send(msg.set(F("pong")));
     } else if (folder < 1 || folder > 99) {
-      send(msg.set("folder arg error"));
+      send(msg.set(F("folder arg error")));
     } else if (sound < 1 || sound > 999) {
-      send(msg.set("sound arg error"));
+      send(msg.set(F("sound arg error")));
     } else if (volume < 1 || volume > 30) {
-      send(msg.set("volume arg error"));
+      send(msg.set(F("volume arg error")));
     } else {
       // play sound
       digitalWrite(POWER_AMPLIFIER, HIGH);
@@ -86,7 +86,7 @@ void receive(const MyMessage &myMsg)
       isOn = true;
       sleepTimer = millis() + 10 * 60000; // set active during 10 minutes
 
-      send(msg.set("Play started"));
+      send(msg.set(F("Play started")));
     }
   }
 }
@@ -105,7 +105,7 @@ void loop() {
       }
     }
     
-    wait (200);
+    wait (500);
   } else {
     wait(0);
   }
@@ -115,7 +115,7 @@ void initDfPlayer() {
   dfPlayerSerial.begin(9600);
 
   if (!dfPlayer.begin(dfPlayerSerial)) {
-    send(msg.set("Init error check SD card"));
+    send(msg.set(F("Init error")));
   }
 }
 
@@ -138,49 +138,49 @@ String parseMsg(String data, char separator, int index) {
 char dfPlayerDetail(uint8_t type, int value) {
   switch (type) {
     case TimeOut:
-      send(msg.set("Time Out"));
+      send(msg.set(F("Time Out")));
       return 1;
     case WrongStack:
-      send(msg.set("Stack Wrong"));
+      send(msg.set(F("Stack Wrong")));
       return 2;
     case DFPlayerCardInserted:
-      send(msg.set("Card Inserted"));
+      send(msg.set(F("Card Inserted")));
       return 3;
     case DFPlayerCardRemoved:
-      send(msg.set("Card Removed"));
+      send(msg.set(F("Card Removed")));
       return 4;
     case DFPlayerCardOnline:
-      send(msg.set("Card Online"));
+      send(msg.set(F("Card Online")));
       return 5;
     case DFPlayerPlayFinished:
-      send(msg.set("Play finished"));
+      send(msg.set(F("Play finished")));
       return 6;
     case DFPlayerError:
       switch (value) {
         case Busy:
-          send(msg.set("Card not found"));
+          send(msg.set(F("Card not found")));
           return 7;
         case Sleeping:
-          send(msg.set("Sleeping"));
+          send(msg.set(F("Sleeping")));
           return 8;
         case SerialWrongStack:
-          send(msg.set("Get Wrong Stack"));
+          send(msg.set(F("Get Wrong Stack")));
           return 9;
         case CheckSumNotMatch:
-          send(msg.set("Check Sum Not Match"));
+          send(msg.set(F("Check Sum Not Match")));
           return 10;
         case FileIndexOut:
-          send(msg.set("File Index Out of Bound"));
+          send(msg.set(F("File Index Out of Bound")));
           return 11;
         case FileMismatch:
-          send(msg.set("Cannot Find File"));
+          send(msg.set(F("Cannot Find File")));
           return 12;
         case Advertise:
-          send(msg.set("In Advertise"));
+          send(msg.set(F("In Advertise")));
           return 13;
         default:
-          send(msg.set("Unknown error"));
-          return "14";
+          send(msg.set(F("Unknown error")));
+          return 14;
       }
     default:
       return 0;
