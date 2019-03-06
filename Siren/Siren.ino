@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -17,15 +17,24 @@
 #include <MySensors.h>
 #include <Keypad.h>
 
-#define DFPLAYER_RX_PIN 8
-#define DFPLAYER_TX_PIN 7
-#define POWER_AMPLIFIER 5
+#define SIREN A0
+#define BUZZER A2
+#define BLUE_LED A3
+#define GREEN_LED A4
+#define RED_LED A5
+
+#if defined(MY_DEBUG)
+  #define DEBUG_PRINT(str) Serial.println(str);
+#else
+  #define DEBUG_PRINT(str)
+#endif
 
 MyMessage msg(0, V_CUSTOM);
 
 char* password = "0000";
 int position = 0;
-
+unsigned long previousKeyPressed = 0;
+unsigned long positionResetTime = 30000L;
 const byte rows = 4; //four rows
 const byte cols = 3; //three columns
 char keys[rows][cols] = {
@@ -38,15 +47,29 @@ byte rowPins[rows] = {6, 5, 4, 3}; //connect to the row pinouts of the keypad
 byte colPins[cols] = {A1, 8, 7}; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, rows, cols);
 
+unsigned long sirenTime = 0;
+char sirenState = 0;
+char bipNumber = 6;
+
 void before()
 {
   // init PIN
-  pinMode(POWER_AMPLIFIER, OUTPUT);
-  digitalWrite(POWER_AMPLIFIER, HIGH);
+  pinMode(SIREN, OUTPUT);
+  digitalWrite(SIREN, LOW);
+  pinMode(BUZZER, OUTPUT);
+  digitalWrite(BUZZER, LOW);
+  pinMode(BLUE_LED, OUTPUT);
+  digitalWrite(BLUE_LED, LOW);
+  pinMode(GREEN_LED, OUTPUT);
+  digitalWrite(GREEN_LED, LOW);
+  pinMode(RED_LED, OUTPUT);
+  digitalWrite(RED_LED, LOW);
+
+  enableSiren(false);
 }
 
 void setup() {
-
+  attachInterrupt(digitalPinToInterrupt(rowPins[rows-1]), keyboardInterrupt, FALLING);
 }
 
 void presentation() {
@@ -63,25 +86,22 @@ void receive(const MyMessage &myMsg)
     String message = myMsg.getString();
 
     // parse message
-    int folder = parseMsg(message, '-', 0).toInt();
-    int sound = parseMsg(message, '-', 1).toInt();
-    int volume = parseMsg(message, '-', 2).toInt();
+    String arg1 = parseMsg(message, '-', 0);
+    String arg2 = parseMsg(message, '-', 1);
 
-    if (message == "stop") {
-
-    } else if (message == "ping") {
+    if (message == "ping") {
       send(msg.set(F("pong")));
-    } else if (folder < 1 || folder > 99) {
-      send(msg.set(F("folder arg error")));
-    } else if (sound < 1 || sound > 999) {
-      send(msg.set(F("sound arg error")));
-    } else if (volume < 1 || volume > 30) {
-      send(msg.set(F("volume arg error")));
+    } else if (message == "stop") {
+      if (isSirenOn()) {
+        enableSiren(false);
+        send(msg.set(F("stopped by user")));
+      }
+    } else if (arg1 == "start") {
+      bipNumber = arg2.toInt();
+      enableSiren(true);
+      send(msg.set(F("started")));
     } else {
-      // play sound
-      digitalWrite(POWER_AMPLIFIER, HIGH);
-
-      send(msg.set(F("Play started")));
+      send(msg.set(F("args error")));
     }
   }
 }
@@ -90,22 +110,99 @@ void loop() {
   char key = keypad.getKey();
 
   if (key != NO_KEY) {
-    Serial.println(key);
+    DEBUG_PRINT(key);
+    previousKeyPressed = millis();
     
     if (key == password[position]) {
       position++;
     } else {
+      DEBUG_PRINT(F("Wrong password!"));
       position = 0;
     }
 
     if (position == 4)
     {
+      DEBUG_PRINT(F("Correct password entered!"));
       position = 0;
-      //setLocked(false);
+
+      if (isSirenOn()) {
+        enableSiren(false);
+        send(msg.set(F("stopped by password")));
+      } else {
+        sound(true);
+        delayMicroseconds(100);
+        sound(false);
+        send(msg.set(F("password entered")));
+      }
     }
   }
-  
-  wait(100);
+
+  if(millis() - previousKeyPressed >= positionResetTime && !isSirenOn()) {
+    DEBUG_PRINT(F("Sleep!"));
+    position = 0;
+    waitUntilKeyPressed();
+    DEBUG_PRINT(F("Wake up!"));
+    DEBUG_PRINT(bipNumber);
+  } else {
+    manageSiren();
+    wait(100);
+  }
+}
+
+void enableSiren(bool enable) {
+  if (enable) {
+    sirenTime = 0;
+    sirenState = 1;
+    DEBUG_PRINT(F("Siren started!"));
+  } else {
+    sirenState = 0;
+    sound(false);
+  }
+}
+
+bool isSirenOn() {
+  return sirenState != 0;
+}
+
+void manageSiren() {
+  if (sirenState == 0) {
+    // nothing to do
+  } else if ((sirenState % 2 == 1 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 1000) {
+    sound(true);
+    sirenTime = millis();
+    sirenState++;
+  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 500) {
+    sound(false);
+    sirenTime = millis();
+    sirenState++;
+  } else if ((sirenState == bipNumber * 2 + 2) && millis() - sirenTime >= 60000) {
+    DEBUG_PRINT(F("Siren stopped after 60s!"));
+    enableSiren(false);
+    send(msg.set(F("stopped")));
+  }
+}
+
+void sound(bool enable) {
+  if (enable) {
+      digitalWrite(SIREN, HIGH);
+  } else {
+      digitalWrite(SIREN, LOW);
+  }
+}
+
+void waitUntilKeyPressed() {
+  for(char i=0; i<cols; i++) {
+    pinMode(colPins[i], OUTPUT);
+    digitalWrite(colPins[i], LOW);
+  }
+
+  pinMode(rowPins[rows-1], INPUT_PULLUP);
+  wait(600000);
+}
+
+void keyboardInterrupt() {
+  // nothing to do
+  bipNumber++;
 }
 
 String parseMsg(String data, char separator, int index) {
