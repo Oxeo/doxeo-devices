@@ -14,69 +14,71 @@
 // Enable repeater functionality
 #define MY_REPEATER_FEATURE
 
-#include <MySensors.h>
-#include <Keypad.h>
-
-#define SIREN A0
+// Define pins
+#define SIREN 6
 #define BUZZER A2
 #define BLUE_LED A3
 #define GREEN_LED A4
 #define RED_LED A5
+#define POWER_PROBE A6
 
+// Debug print
 #if defined(MY_DEBUG)
   #define DEBUG_PRINT(str) Serial.println(str);
 #else
   #define DEBUG_PRINT(str)
 #endif
 
-MyMessage msg(0, V_CUSTOM);
+// Includes
+#include <MySensors.h>
+#include <Keypad.h>
+#include <RGBLed.h>  // https://github.com/wilmouths/RGBLed
 
-char* password = "0000";
-int position = 0;
-unsigned long previousKeyPressed = 0;
-unsigned long positionResetTime = 30000L;
-const byte rows = 4; //four rows
-const byte cols = 3; //three columns
-char keys[rows][cols] = {
+// Keypad
+char* _password = "0000";
+int _keyboardPosition = 0;
+bool _keyboardEnable = false;
+unsigned long _keyboardEnableTime = 0;
+const byte _rows = 4;
+const byte _cols = 3;
+char _keys[_rows][_cols] = {
   {'1','2','3'},
   {'4','5','6'},
   {'7','8','9'},
   {'*','0','#'}
 };
-byte rowPins[rows] = {6, 5, 4, 3}; //connect to the row pinouts of the keypad
-byte colPins[cols] = {A1, 8, 7}; //connect to the column pinouts of the keypad
-Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, rows, cols);
+byte _rowPins[_rows] = {A0, 5, 4, 3}; //connect to the row pinouts of the keypad
+byte _colPins[_cols] = {A1, 8, 7}; //connect to the column pinouts of the keypad
+Keypad _keypad = Keypad(makeKeymap(_keys), _rowPins, _colPins, _rows, _cols);
 
-unsigned long sirenTime = 0;
-char sirenState = 0;
-char bipNumber = 6;
+// Others
+MyMessage msg(0, V_CUSTOM);
+unsigned long _sirenTime = 0;
+int _sirenState = 0;
+int _bipNumber = 0;
+int _sienLevel = 255;
+bool _isOnBattery = false;
+RGBLed led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 
 void before()
 {
-  // init PIN
   pinMode(SIREN, OUTPUT);
   digitalWrite(SIREN, LOW);
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, LOW);
-  pinMode(BLUE_LED, OUTPUT);
-  digitalWrite(BLUE_LED, LOW);
-  pinMode(GREEN_LED, OUTPUT);
-  digitalWrite(GREEN_LED, LOW);
-  pinMode(RED_LED, OUTPUT);
-  digitalWrite(RED_LED, LOW);
+  pinMode(POWER_PROBE, INPUT);
 
-  enableSiren(false);
+  stopSiren();
 }
 
 void setup() {
-  attachInterrupt(digitalPinToInterrupt(rowPins[rows-1]), keyboardInterrupt, FALLING);
+  attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
+  led.flash(RGBLed::WHITE, 500);  
+  send(msg.set(F("system started")));
 }
 
 void presentation() {
-  // Send the sketch version information to the gateway and Controller
   sendSketchInfo("Siren", "1.0");
-
-  // Present sensor to controller
   present(0, S_CUSTOM);
 }
 
@@ -84,21 +86,18 @@ void receive(const MyMessage &myMsg)
 {
   if (myMsg.type == V_CUSTOM) {
     String message = myMsg.getString();
+    String arg0 = parseMsg(message, '-', 0);
+    String arg1 = parseMsg(message, '-', 1);
+    String arg2 = parseMsg(message, '-', 2);
 
-    // parse message
-    String arg1 = parseMsg(message, '-', 0);
-    String arg2 = parseMsg(message, '-', 1);
-
-    if (message == "ping") {
+    if (arg0 == "ping") {
       send(msg.set(F("pong")));
-    } else if (message == "stop") {
-      if (isSirenOn()) {
-        enableSiren(false);
-        send(msg.set(F("stopped by user")));
-      }
-    } else if (arg1 == "start") {
-      bipNumber = arg2.toInt();
-      enableSiren(true);
+    } else if (arg0 == "stop") {
+      stopSiren();
+      send(msg.set(F("stopped by user")));
+    } else if (arg0 == "start") {
+      _sienLevel = map(arg2.toInt(), 0, 100, 0, 255);
+      startSiren(arg1.toInt());
       send(msg.set(F("started")));
     } else {
       send(msg.set(F("args error")));
@@ -107,102 +106,112 @@ void receive(const MyMessage &myMsg)
 }
 
 void loop() {
-  char key = keypad.getKey();
+  if (_keyboardEnable) {
+      char key = _keypad.getKey();
 
-  if (key != NO_KEY) {
-    DEBUG_PRINT(key);
-    previousKeyPressed = millis();
-    
-    if (key == password[position]) {
-      position++;
-    } else {
-      DEBUG_PRINT(F("Wrong password!"));
-      position = 0;
-    }
+      // key pressed
+      if (key != NO_KEY) {
+        DEBUG_PRINT(key);
+        led.flash(RGBLed::YELLOW, 100);
+        
+        if (key == _password[_keyboardPosition]) {
+          _keyboardPosition++;
+        } else {
+          _keyboardPosition = 0;
+        }
 
-    if (position == 4)
-    {
-      DEBUG_PRINT(F("Correct password entered!"));
-      position = 0;
+        if (_keyboardPosition == 4) {
+          DEBUG_PRINT(F("Correct password entered!"));
+          _keyboardPosition = 0;
+          led.flash(RGBLed::GREEN, 100);
 
-      if (isSirenOn()) {
-        enableSiren(false);
-        send(msg.set(F("stopped by password")));
-      } else {
-        sound(true);
-        delayMicroseconds(100);
-        sound(false);
-        send(msg.set(F("password entered")));
+          if (isSirenOn()) {
+            stopSiren();
+            send(msg.set(F("stopped by password")));
+          } else {
+            send(msg.set(F("password entered")));
+          }
+        }
       }
-    }
+      
+      if (millis() - _keyboardEnableTime >= 30000) {
+        _keyboardEnable = false;
+        _keyboardPosition = 0;
+        putKeypadToInterruptMode();
+        DEBUG_PRINT(F("Keyboard set to interrupt mode!"));
+      }
+  }
+  
+  if (digitalRead(POWER_PROBE) == LOW && !_isOnBattery) {
+    DEBUG_PRINT(F("On battery"));
+    send(msg.set(F("on battery")));
+    _isOnBattery = true;
+    led.setColor(RGBLed::RED);
+  } else if (digitalRead(POWER_PROBE) == HIGH && _isOnBattery) {
+    DEBUG_PRINT(F("On power supply"));
+    send(msg.set(F("on power supply")));
+    _isOnBattery = false;
+    led.off();
   }
 
-  if(millis() - previousKeyPressed >= positionResetTime && !isSirenOn()) {
-    DEBUG_PRINT(F("Sleep!"));
-    position = 0;
-    waitUntilKeyPressed();
-    DEBUG_PRINT(F("Wake up!"));
-    DEBUG_PRINT(bipNumber);
-  } else {
-    manageSiren();
-    wait(100);
-  }
+  manageSiren();
+  wait(100);
 }
 
-void enableSiren(bool enable) {
-  if (enable) {
-    sirenTime = 0;
-    sirenState = 1;
-    DEBUG_PRINT(F("Siren started!"));
-  } else {
-    sirenState = 0;
-    sound(false);
-  }
+void startSiren(int bipBumber) {
+  _bipNumber = bipBumber;
+  _sirenTime = 0;
+  _sirenState = 1;
+  DEBUG_PRINT(F("Siren started!"));
+}
+
+void stopSiren() {
+  _sirenState = 0;
+  sound(false);
 }
 
 bool isSirenOn() {
-  return sirenState != 0;
+  return _sirenState != 0;
 }
 
 void manageSiren() {
-  if (sirenState == 0) {
+  if (_sirenState == 0) {
     // nothing to do
-  } else if ((sirenState % 2 == 1 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 1000) {
+  } else if ((_sirenState % 2 == 1 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 1000) {
     sound(true);
-    sirenTime = millis();
-    sirenState++;
-  } else if ((sirenState % 2 == 0 && sirenState < bipNumber * 2 + 2) && millis() - sirenTime >= 500) {
+    _sirenTime = millis();
+    _sirenState++;
+  } else if ((_sirenState % 2 == 0 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 500) {
     sound(false);
-    sirenTime = millis();
-    sirenState++;
-  } else if ((sirenState == bipNumber * 2 + 2) && millis() - sirenTime >= 60000) {
+    _sirenTime = millis();
+    _sirenState++;
+  } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
     DEBUG_PRINT(F("Siren stopped after 60s!"));
-    enableSiren(false);
+    stopSiren();
     send(msg.set(F("stopped")));
   }
 }
 
 void sound(bool enable) {
   if (enable) {
-      digitalWrite(SIREN, HIGH);
+      analogWrite(SIREN, _sienLevel);
   } else {
-      digitalWrite(SIREN, LOW);
+      analogWrite(SIREN, 0);
   }
 }
 
-void waitUntilKeyPressed() {
-  for(char i=0; i<cols; i++) {
-    pinMode(colPins[i], OUTPUT);
-    digitalWrite(colPins[i], LOW);
+void putKeypadToInterruptMode() {
+  for(char i=0; i<_cols; i++) {
+    pinMode(_colPins[i], OUTPUT);
+    digitalWrite(_colPins[i], LOW);
   }
 
-  pinMode(rowPins[rows-1], INPUT_PULLUP);
-  wait(600000);
+  pinMode(_rowPins[_rows-1], INPUT_PULLUP);
 }
 
 void keyboardInterrupt() {
-  // nothing to do
-  bipNumber++;
+  _keyboardEnable = true;
+  _keyboardEnableTime = millis();
 }
 
 String parseMsg(String data, char separator, int index) {
@@ -220,4 +229,3 @@ String parseMsg(String data, char separator, int index) {
 
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
-
