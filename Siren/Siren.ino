@@ -15,8 +15,8 @@
 #define MY_REPEATER_FEATURE
 
 // Define pins
-#define SIREN 6
-#define BUZZER A2
+#define SIREN 5
+#define BUZZER 6
 #define BLUE_LED A3
 #define GREEN_LED A4
 #define RED_LED A5
@@ -47,8 +47,8 @@ char _keys[_rows][_cols] = {
   {'7','8','9'},
   {'*','0','#'}
 };
-byte _rowPins[_rows] = {A0, 5, 4, 3}; //connect to the row pinouts of the keypad
-byte _colPins[_cols] = {A1, 8, 7}; //connect to the column pinouts of the keypad
+byte _rowPins[_rows] = {8, 7, 4, 3}; //connect to the row pinouts of the keypad
+byte _colPins[_cols] = {A0, A1, A2}; //connect to the column pinouts of the keypad
 Keypad _keypad = Keypad(makeKeymap(_keys), _rowPins, _colPins, _rows, _cols);
 
 // Others
@@ -56,7 +56,7 @@ MyMessage msg(0, V_CUSTOM);
 unsigned long _sirenTime = 0;
 int _sirenState = 0;
 int _bipNumber = 0;
-int _sienLevel = 255;
+int _sirenLevel = 100;
 bool _isOnBattery = false;
 RGBLed led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 
@@ -73,7 +73,8 @@ void before()
 
 void setup() {
   attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
-  led.flash(RGBLed::WHITE, 500);  
+  initPasswordValue();
+  led.flash(RGBLed::WHITE, 500);
   send(msg.set(F("system started")));
 }
 
@@ -96,9 +97,15 @@ void receive(const MyMessage &myMsg)
       stopSiren();
       send(msg.set(F("stopped by user")));
     } else if (arg0 == "start") {
-      _sienLevel = map(arg2.toInt(), 0, 100, 0, 255);
-      startSiren(arg1.toInt());
+      startSiren(arg1.toInt(), arg2.toInt());
       send(msg.set(F("started")));
+    } else if (arg0 == "password") {
+      if (arg1.length() != 4) {
+        send(msg.set(F("password shall be on 4 c")));
+      } else {
+        savePassword(arg1);
+        send(msg.set(F("password saved")));
+      }
     } else {
       send(msg.set(F("args error")));
     }
@@ -106,42 +113,22 @@ void receive(const MyMessage &myMsg)
 }
 
 void loop() {
-  if (_keyboardEnable) {
-      char key = _keypad.getKey();
+  manageKeyboard();
+  manageSiren();
+  managePowerProbe();
+  wait(100);
+}
 
-      // key pressed
-      if (key != NO_KEY) {
-        DEBUG_PRINT(key);
-        led.flash(RGBLed::YELLOW, 100);
-        
-        if (key == _password[_keyboardPosition]) {
-          _keyboardPosition++;
-        } else {
-          _keyboardPosition = 0;
-        }
-
-        if (_keyboardPosition == 4) {
-          DEBUG_PRINT(F("Correct password entered!"));
-          _keyboardPosition = 0;
-          led.flash(RGBLed::GREEN, 100);
-
-          if (isSirenOn()) {
-            stopSiren();
-            send(msg.set(F("stopped by password")));
-          } else {
-            send(msg.set(F("password entered")));
-          }
-        }
-      }
-      
-      if (millis() - _keyboardEnableTime >= 30000) {
-        _keyboardEnable = false;
-        _keyboardPosition = 0;
-        putKeypadToInterruptMode();
-        DEBUG_PRINT(F("Keyboard set to interrupt mode!"));
-      }
+void correctPasswordEntered() {
+  if (isSirenOn()) {
+    stopSiren();
+    send(msg.set(F("stopped by password")));
+  } else {
+    send(msg.set(F("password entered")));
   }
-  
+}
+
+void managePowerProbe() {
   if (digitalRead(POWER_PROBE) == LOW && !_isOnBattery) {
     DEBUG_PRINT(F("On battery"));
     send(msg.set(F("on battery")));
@@ -153,13 +140,11 @@ void loop() {
     _isOnBattery = false;
     led.off();
   }
-
-  manageSiren();
-  wait(100);
 }
 
-void startSiren(int bipBumber) {
+void startSiren(char bipBumber, char level) {
   _bipNumber = bipBumber;
+  _sirenLevel = level;
   _sirenTime = 0;
   _sirenState = 1;
   DEBUG_PRINT(F("Siren started!"));
@@ -167,7 +152,8 @@ void startSiren(int bipBumber) {
 
 void stopSiren() {
   _sirenState = 0;
-  sound(false);
+  stopSirenSound();
+  DEBUG_PRINT(F("Siren stopped!"));
 }
 
 bool isSirenOn() {
@@ -178,11 +164,11 @@ void manageSiren() {
   if (_sirenState == 0) {
     // nothing to do
   } else if ((_sirenState % 2 == 1 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 1000) {
-    sound(true);
+    startSirenSound(_sirenLevel);
     _sirenTime = millis();
     _sirenState++;
   } else if ((_sirenState % 2 == 0 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 500) {
-    sound(false);
+    stopSirenSound();
     _sirenTime = millis();
     _sirenState++;
   } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
@@ -192,12 +178,52 @@ void manageSiren() {
   }
 }
 
-void sound(bool enable) {
-  if (enable) {
-      analogWrite(SIREN, _sienLevel);
-  } else {
-      analogWrite(SIREN, 0);
+void manageKeyboard() {
+    if (_keyboardEnable) {
+      char key = _keypad.getKey();
+
+      // key pressed
+      if (key != NO_KEY) {
+        DEBUG_PRINT(F("Key pressed:"));
+        DEBUG_PRINT(key);
+        buzz(50);
+        
+        if (key == _password[_keyboardPosition]) {
+          _keyboardPosition++;
+        } else {
+          _keyboardPosition = 0;
+        }
+
+        if (_keyboardPosition == 4) {
+          DEBUG_PRINT(F("Correct password entered!"));
+          _keyboardPosition = 0;
+          led.flash(RGBLed::GREEN, 100);
+          buzz(200);
+          correctPasswordEntered();
+        }
+      }
+      
+      if (millis() - _keyboardEnableTime >= 30000) {
+        _keyboardEnable = false;
+        _keyboardPosition = 0;
+        putKeypadToInterruptMode();
+        DEBUG_PRINT(F("Keyboard set to interrupt mode!"));
+      }
   }
+}
+
+void startSirenSound(char level) {
+    analogWrite(SIREN, map(level, 0, 100, 0, 255));
+}
+
+void stopSirenSound() {
+    analogWrite(SIREN, 0);
+}
+
+void buzz(char timer) {
+    analogWrite(BUZZER, 255);
+    wait(timer);
+    analogWrite(BUZZER, 0);
 }
 
 void putKeypadToInterruptMode() {
@@ -207,6 +233,27 @@ void putKeypadToInterruptMode() {
   }
 
   pinMode(_rowPins[_rows-1], INPUT_PULLUP);
+}
+
+void initPasswordValue() {
+  if (isAscii(loadState(0))) {
+      for (char i=0; i<strlen(_password); i++) {
+        _password[i] = loadState(i);
+      }
+  }
+  
+  DEBUG_PRINT(F("Password is:"));
+  DEBUG_PRINT(_password);
+}
+
+void savePassword(String password) {
+    for (char i=0; i<strlen(_password); i++) {
+        _password[i] = password.charAt(i);
+        saveState(i, _password[i]);
+    }
+    
+  DEBUG_PRINT(F("New password saved:"));
+  DEBUG_PRINT(_password);
 }
 
 void keyboardInterrupt() {
