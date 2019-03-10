@@ -129,12 +129,14 @@ void correctPasswordEntered() {
 }
 
 void managePowerProbe() {
-  if (digitalRead(POWER_PROBE) == LOW && !_isOnBattery) {
+  boolean sectorOn = (analogRead(POWER_PROBE) > 900) ? true : false;
+  
+  if (!sectorOn && !_isOnBattery) {
     DEBUG_PRINT(F("On battery"));
     send(msg.set(F("on battery")));
     _isOnBattery = true;
     led.setColor(RGBLed::RED);
-  } else if (digitalRead(POWER_PROBE) == HIGH && _isOnBattery) {
+  } else if (sectorOn && _isOnBattery) {
     DEBUG_PRINT(F("On power supply"));
     send(msg.set(F("on power supply")));
     _isOnBattery = false;
@@ -167,7 +169,7 @@ void manageSiren() {
     startSirenSound(_sirenLevel);
     _sirenTime = millis();
     _sirenState++;
-  } else if ((_sirenState % 2 == 0 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 500) {
+  } else if ((_sirenState % 2 == 0 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 100) {
     stopSirenSound();
     _sirenTime = millis();
     _sirenState++;
