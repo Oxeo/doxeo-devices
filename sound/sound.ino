@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -20,23 +20,34 @@
 
 #define DFPLAYER_RX_PIN 8
 #define DFPLAYER_TX_PIN 7
-#define POWER_AMPLIFIER 5
+#define RELAY 5
+#define LED A3
 
 // DF Player
 SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
 
 // Timer
-unsigned long sleepTimer = 0;
-bool isOn = false;
+unsigned long previousMillis = 0;
+unsigned long timeToStayAwake = 0;
+
+// State
+enum State_enum {SLEEPING, WAITING, PLAYING};
+uint8_t _state = SLEEPING;
+
+// Led blink
+boolean ledOn = false;
+unsigned long previousLedChange = 0;
 
 MyMessage msg(0, V_CUSTOM);
 
 void before()
 {
   // init PIN
-  pinMode(POWER_AMPLIFIER, OUTPUT);
-  digitalWrite(POWER_AMPLIFIER, HIGH);
+  pinMode(RELAY, OUTPUT);
+  digitalWrite(RELAY, LOW);
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
 }
 
 void setup() {
@@ -44,15 +55,15 @@ void setup() {
   initDfPlayer();
 
   // play sound
+  startAmplifier();
   dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
-  isOn = true;
-  sleepTimer = millis() + 10 * 60000; // set active during 10 minutes
+  changeState(PLAYING);
 }
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Sound", "1.0");
+  sendSketchInfo("Sound", "2.0");
 
   // Present sensor to controller
   present(0, S_CUSTOM);
@@ -70,6 +81,8 @@ void receive(const MyMessage &myMsg)
 
     if (message == "stop") {
       dfPlayer.stop();
+      send(msg.set(F("play stopped")));
+      changeState(WAITING);
     } else if (message == "ping") {
       send(msg.set(F("pong")));
     } else if (folder < 1 || folder > 99) {
@@ -80,35 +93,61 @@ void receive(const MyMessage &myMsg)
       send(msg.set(F("volume arg error")));
     } else {
       // play sound
-      digitalWrite(POWER_AMPLIFIER, HIGH);
+      if (_state == SLEEPING) {
+        startAmplifier();
+      }
       dfPlayer.volume(volume);
       dfPlayer.playFolder(folder, sound);
-      isOn = true;
-      sleepTimer = millis() + 10 * 60000; // set active during 10 minutes
-
-      send(msg.set(F("Play started")));
+      changeState(PLAYING);
     }
   }
 }
 
 void loop() {
-  if (isOn) {
-    if (sleepTimer < millis()) {
-      digitalWrite(POWER_AMPLIFIER, LOW);  // stop amplifier
-      isOn = false;
+  if (_state != SLEEPING) {
+    if (millis() - previousMillis >= timeToStayAwake) {
+      changeState(SLEEPING);
     } else if (dfPlayer.available()) { // Get DFPlayer status
-      char errorNb = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+      char status = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
 
       // Play finished
-      if (errorNb == 6) {
-        sleepTimer = millis() + 5000; // stop after 5 secondes
+      if (status == 6) {
+        if (_state == PLAYING) {
+          send(msg.set(F("play finished")));
+        }
+        changeState(WAITING);
       }
     }
-    
-    wait (500);
-  } else {
-    wait(0);
+
+    // Blink led in waiting state
+    if (_state == WAITING && (millis() - previousLedChange >= 1000)) {
+      ledOn = !ledOn;
+      digitalWrite(LED, ledOn);
+      previousLedChange = millis();
+    }
   }
+    
+  wait(100);
+}
+
+void changeState(uint8_t state) {
+  switch (state) {
+    case PLAYING:
+      previousMillis = millis();
+      timeToStayAwake = 10 * 60000; // 10 minutes
+      send(msg.set(F("play started")));
+      break;
+    case WAITING:
+      previousMillis = millis();
+      timeToStayAwake = 30000;
+      break;
+    case SLEEPING:
+      stopAmplifier();
+      send(msg.set(F("sleeping")));
+      break;
+  }
+
+  _state = state;
 }
 
 void initDfPlayer() {
@@ -117,6 +156,18 @@ void initDfPlayer() {
   if (!dfPlayer.begin(dfPlayerSerial)) {
     send(msg.set(F("Init error")));
   }
+
+  dfPlayer.setTimeOut(500);
+}
+
+void startAmplifier() {
+  digitalWrite(RELAY, HIGH);
+  digitalWrite(LED, HIGH);
+}
+
+void stopAmplifier() {
+  digitalWrite(RELAY, LOW);
+  digitalWrite(LED, LOW);
 }
 
 String parseMsg(String data, char separator, int index) {
@@ -138,48 +189,47 @@ String parseMsg(String data, char separator, int index) {
 char dfPlayerDetail(uint8_t type, int value) {
   switch (type) {
     case TimeOut:
-      send(msg.set(F("Time Out")));
+      send(msg.set(F("time out")));
       return 1;
     case WrongStack:
-      send(msg.set(F("Stack Wrong")));
+      send(msg.set(F("wrong stack")));
       return 2;
     case DFPlayerCardInserted:
-      send(msg.set(F("Card Inserted")));
+      send(msg.set(F("card inserted")));
       return 3;
     case DFPlayerCardRemoved:
-      send(msg.set(F("Card Removed")));
+      send(msg.set(F("card removed")));
       return 4;
     case DFPlayerCardOnline:
-      send(msg.set(F("Card Online")));
+      send(msg.set(F("card online")));
       return 5;
     case DFPlayerPlayFinished:
-      send(msg.set(F("Play finished")));
       return 6;
     case DFPlayerError:
       switch (value) {
         case Busy:
-          send(msg.set(F("Card not found")));
+          send(msg.set(F("card not found")));
           return 7;
         case Sleeping:
-          send(msg.set(F("Sleeping")));
+          send(msg.set(F("sleeping")));
           return 8;
         case SerialWrongStack:
-          send(msg.set(F("Get Wrong Stack")));
+          send(msg.set(F("get wrong ttack")));
           return 9;
         case CheckSumNotMatch:
-          send(msg.set(F("Check Sum Not Match")));
+          send(msg.set(F("checksum not match")));
           return 10;
         case FileIndexOut:
-          send(msg.set(F("File Index Out of Bound")));
+          send(msg.set(F("file index out of bound")));
           return 11;
         case FileMismatch:
-          send(msg.set(F("Cannot Find File")));
+          send(msg.set(F("cannot find file")));
           return 12;
         case Advertise:
-          send(msg.set(F("In Advertise")));
+          send(msg.set(F("in advertise")));
           return 13;
         default:
-          send(msg.set(F("Unknown error")));
+          send(msg.set(F("unknown error")));
           return 14;
       }
     default:
