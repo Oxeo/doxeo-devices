@@ -47,5 +47,5 @@ void presentation()
 
 void loop()
 {
-	wait(0);
+	//wait(0);
 }

@@ -28,16 +28,17 @@ SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
 
 // Timer
-unsigned long previousMillis = 0;
-unsigned long timeToStayAwake = 0;
+unsigned long _previousMillis = 0;
+unsigned long _timeToStayAwake = 0;
 
 // State
 enum State_enum {SLEEPING, WAITING, PLAYING};
 uint8_t _state = SLEEPING;
+String _messagePlaying = "";
 
 // Led blink
-boolean ledOn = false;
-unsigned long previousLedChange = 0;
+boolean _ledOn = false;
+unsigned long _previousLedChange = 0;
 
 MyMessage msg(0, V_CUSTOM);
 
@@ -92,20 +93,25 @@ void receive(const MyMessage &myMsg)
     } else if (volume < 1 || volume > 30) {
       send(msg.set(F("volume arg error")));
     } else {
-      // play sound
-      if (_state == SLEEPING) {
-        startAmplifier();
+      if (_state != PLAYING || _messagePlaying != message || millis() - _previousMillis >= 10000) {
+        // play sound
+        if (_state == SLEEPING) {
+          startAmplifier();
+        }
+        dfPlayer.volume(volume);
+        dfPlayer.playFolder(folder, sound);
+        _messagePlaying = message;
+        changeState(PLAYING);
+      } else {
+        send(msg.set(F("already playing")));
       }
-      dfPlayer.volume(volume);
-      dfPlayer.playFolder(folder, sound);
-      changeState(PLAYING);
     }
   }
 }
 
 void loop() {
   if (_state != SLEEPING) {
-    if (millis() - previousMillis >= timeToStayAwake) {
+    if (millis() - _previousMillis >= _timeToStayAwake) {
       changeState(SLEEPING);
     } else if (dfPlayer.available()) { // Get DFPlayer status
       char status = dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
@@ -120,10 +126,10 @@ void loop() {
     }
 
     // Blink led in waiting state
-    if (_state == WAITING && (millis() - previousLedChange >= 1000)) {
-      ledOn = !ledOn;
-      digitalWrite(LED, ledOn);
-      previousLedChange = millis();
+    if (_state == WAITING && (millis() - _previousLedChange >= 1000)) {
+      _ledOn = !_ledOn;
+      digitalWrite(LED, _ledOn);
+      _previousLedChange = millis();
     }
   }
     
@@ -133,13 +139,13 @@ void loop() {
 void changeState(uint8_t state) {
   switch (state) {
     case PLAYING:
-      previousMillis = millis();
-      timeToStayAwake = 10 * 60000; // 10 minutes
+      _previousMillis = millis();
+      _timeToStayAwake = 10 * 60000; // 10 minutes
       send(msg.set(F("play started")));
       break;
     case WAITING:
-      previousMillis = millis();
-      timeToStayAwake = 30000;
+      _previousMillis = millis();
+      _timeToStayAwake = 30000;
       break;
     case SLEEPING:
       stopAmplifier();
