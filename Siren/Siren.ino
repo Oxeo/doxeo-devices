@@ -222,7 +222,7 @@ void stopSirenSound() {
     analogWrite(SIREN, 0);
 }
 
-void buzz(char timer) {
+void buzz(int timer) {
     analogWrite(BUZZER, 255);
     wait(timer);
     analogWrite(BUZZER, 0);
