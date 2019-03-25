@@ -8,6 +8,12 @@
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 #define MY_TRANSPORT_MAX_TX_FAILURES (3u)
 
+#if defined(MY_DEBUG)
+  #define DEBUG_PRINT(str) Serial.println(str);
+#else
+  #define DEBUG_PRINT(str)
+#endif
+
 #include <MySensors.h>
 #include <SPI.h>
 #include <OneWire.h>
@@ -15,7 +21,7 @@
 
 // 1 = lounge
 // 2 = bedroom
-#define SENSOR_CONFIGURATION 1
+#define SENSOR_CONFIGURATION 0
 
 #if SENSOR_CONFIGURATION == 1
 #define PIN_TEMPERATURE 3
@@ -23,15 +29,21 @@
 #elif SENSOR_CONFIGURATION == 2
 #define PIN_TEMPERATURE 4
 #define PIN_ALIM_TEMPERATURE 5
+#else
+#define PIN_TEMPERATURE A0
+#define PIN_ALIM_TEMPERATURE A1
 #endif
+
+#define PIN_PHOTOCELL A3
+#define PIN_ALIM_PHOTOCELL A5
 
 #ifdef REPORT_BATTERY_LEVEL
 #include <Vcc.h>
-static uint8_t oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
-const float VccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
-const float VccMax        = 2.0*1.6;  // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
-const float VccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
-static Vcc vcc(VccCorrection); 
+static uint8_t _oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
+const float _vccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
+const float _vccMax        = 2.0*1.6;  // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
+const float _vccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
+static Vcc _vcc(_vccCorrection); 
 #endif
 
 #define TEMPERATURE_PRECISION 11 //Max 12 bit, min 9 bit
@@ -41,16 +53,18 @@ OneWire oneWire(PIN_TEMPERATURE);
 DallasTemperature sensors(&oneWire);
 byte dallasSensorAddress[8];
 
-char retryNb = 0;
 float temp = 0.0;
+int oldLight = -100;
+unsigned int _cpt = 0;
 bool success = false;
 
-MyMessage msg(0, V_TEMP);
+MyMessage msgTemp(0, V_TEMP);
+MyMessage msgLight(1, V_LIGHT_LEVEL);
 
 void setup() {
   randomSeed(analogRead(0));//initialise la séquence aléatoir
   initializeDallasSensor();
-  retryNb = 0;
+  pinMode(PIN_PHOTOCELL, INPUT);
 }
 
 void presentation() {
@@ -59,46 +73,32 @@ void presentation() {
 
   // Present sensor to controller
   present(0, S_TEMP);
+  present(1, S_LIGHT_LEVEL);
 }
 
 void loop() {
-  temp = getDallasTemperature();
-  delay(100);
-  success = false;
-  
-  while (!success) {
-    success = send(msg.set(temp, 1));
+  // Every 10 minutes
+  if (_cpt % 60 == 0) {
+    temp = getDallasTemperature();
 
-    if (success) {
-      retryNb = 0;
-      sleep(600000); // 10 minutes
-    } else {
-      if (retryNb < 5) {
-        delay(random(500));
-        retryNb++;
-      } else {
-        success = true;
-      }
-    }
+    DEBUG_PRINT(F("Temperature: "));
+    DEBUG_PRINT(temp);
+    
+    send(msgTemp.set(temp, 1));
+    reportBatteryLevel();
   }
 
-#ifdef REPORT_BATTERY_LEVEL
-  const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + vcc.Read_Perc(VccMin, VccMax));
+  int photocell = readPhotocell();
 
-#ifdef MY_DEBUG
-  Serial.print(F("Vbat "));
-  Serial.print(vcc.Read_Volts());
-  Serial.print(F("\tPerc "));
-  Serial.println(batteryPcnt);
-#endif
-
-  // Battery readout should only go down. So report only when new value is smaller than previous one.
-  if ( batteryPcnt < oldBatteryPcnt )
-  {
-      sendBatteryLevel(batteryPcnt);
-      oldBatteryPcnt = batteryPcnt;
+  if (photocell != oldLight) {
+    oldLight = photocell;
+    DEBUG_PRINT(F("Light: "));
+    DEBUG_PRINT(photocell);
+    send(msgLight.set(photocell));
   }
-#endif
+
+  _cpt++;
+  sleep(10000);
 }
 
 void initializeDallasSensor() {
@@ -138,4 +138,35 @@ float getDallasTemperature() {
   pinMode(PIN_ALIM_TEMPERATURE, INPUT);
 
   return temperature;
+}
+
+int readPhotocell() {
+  pinMode(PIN_ALIM_PHOTOCELL, OUTPUT);
+  digitalWrite(PIN_ALIM_PHOTOCELL, HIGH);
+  sleep(30);
+  
+  int value = analogRead(PIN_PHOTOCELL) / 10.23;
+
+  digitalWrite(PIN_ALIM_PHOTOCELL, LOW);
+  pinMode(PIN_ALIM_PHOTOCELL, INPUT);
+
+  return value;
+}
+
+void reportBatteryLevel() {
+  const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + _vcc.Read_Perc(_vccMin, _vccMax));
+
+#ifdef MY_DEBUG
+  Serial.print(F("Vbat "));
+  Serial.print(_vcc.Read_Volts());
+  Serial.print(F("\tPerc "));
+  Serial.println(batteryPcnt);
+#endif
+
+  // Battery readout should only go down. So report only when new value is smaller than previous one.
+  if ( batteryPcnt < _oldBatteryPcnt )
+  {
+    sendBatteryLevel(batteryPcnt);
+    _oldBatteryPcnt = batteryPcnt;
+  }
 }
