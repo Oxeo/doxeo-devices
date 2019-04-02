@@ -90,7 +90,7 @@ void loop() {
 
   int photocell = readPhotocell();
 
-  if (photocell != oldLight) {
+  if (abs(photocell - oldLight) > 10) {
     oldLight = photocell;
     DEBUG_PRINT(F("Light: "));
     DEBUG_PRINT(photocell);
