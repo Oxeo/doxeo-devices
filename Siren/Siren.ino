@@ -33,6 +33,7 @@
 #include <MySensors.h>
 #include <Keypad.h>
 #include <RGBLed.h>  // https://github.com/wilmouths/RGBLed
+#include "Parser.h"
 
 // Keypad
 char* _password = "0000";
@@ -51,72 +52,89 @@ byte _rowPins[_rows] = {8, 7, 4, 3}; //connect to the row pinouts of the keypad
 byte _colPins[_cols] = {A0, A1, A2}; //connect to the column pinouts of the keypad
 Keypad _keypad = Keypad(makeKeymap(_keys), _rowPins, _colPins, _rows, _cols);
 
-// Others
-MyMessage msg(0, V_CUSTOM);
+// Siren
 unsigned long _sirenTime = 0;
 int _sirenState = 0;
-int _bipNumber = 0;
-int _sirenLevel = 100;
+byte _bipNumber = 0;
+byte _sirenLevel = 100;
+
+// Buzzer
+int _buzzerDuration = 0;
+unsigned long _buzzerStartTime = 0;
+bool _buzzerIsOn = false;
+
+// Others
+MyMessage msg(0, V_CUSTOM);
 bool _isOnBattery = false;
 RGBLed led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
+Parser parser = Parser(' ');
 
 void before()
 {
   pinMode(SIREN, OUTPUT);
-  digitalWrite(SIREN, LOW);
   pinMode(BUZZER, OUTPUT);
-  digitalWrite(BUZZER, LOW);
   pinMode(POWER_PROBE, INPUT);
 
   stopSiren();
+  stopBuzzer();
+  led.setColor(RGBLed::RED);
 }
 
 void setup() {
   attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
   initPasswordValue();
-  led.flash(RGBLed::WHITE, 500);
+  led.flash(RGBLed::GREEN, 500);
   send(msg.set(F("system started")));
 }
 
 void presentation() {
-  sendSketchInfo("Siren", "1.0");
+  sendSketchInfo("Siren", "2.0");
   present(0, S_CUSTOM);
 }
 
 void receive(const MyMessage &myMsg)
 {
   if (myMsg.type == V_CUSTOM) {
-    String message = myMsg.getString();
-    String arg0 = parseMsg(message, '-', 0);
-    String arg1 = parseMsg(message, '-', 1);
-    String arg2 = parseMsg(message, '-', 2);
+    parser.parse(myMsg.getString());
 
-    if (arg0 == "ping") {
+    if (parser.get(0) == NULL) {
+        send(msg.set(F("cmd missing! send help")));
+    } else if (parser.isEqual(0, "ping")) {
       send(msg.set(F("pong")));
-    } else if (arg0 == "stop") {
+    } else if (parser.isEqual(0, "stop")) {
       stopSiren();
-      send(msg.set(F("stopped by user")));
-    } else if (arg0 == "start") {
-      startSiren(arg1.toInt(), arg2.toInt());
-      send(msg.set(F("started")));
-    } else if (arg0 == "password") {
-      if (arg1.length() != 4) {
+      send(msg.set(F("siren stopped by user")));
+    } else if (parser.isEqual(0, "start") && parser.get(1) != NULL && parser.get(2) != NULL) {
+      startSiren(parser.getInt(1), parser.getInt(2));
+      send(msg.set(F("siren started")));
+    } else if (parser.isEqual(0, "password") && parser.get(1) != NULL) {
+      if (strlen(parser.get(1)) != 4) {
         send(msg.set(F("password shall be on 4 c")));
       } else {
-        savePassword(arg1);
+        savePassword(parser.get(1));
         send(msg.set(F("password saved")));
       }
+    } else if (parser.isEqual(0, "buzzer") && parser.get(1) != NULL) {
+      startBuzzer(parser.getInt(1));
+      send(msg.set(F("buzzer started")));
+    } else if (parser.isEqual(0, "help")) {
+        send(msg.set(F("cmd1: ping")));
+        send(msg.set(F("cmd2: stop")));
+        send(msg.set(F("cmd3: start [bip] [level]")));
+        send(msg.set(F("cmd4: password [pswd]")));
+        send(msg.set(F("cmd5: buzzer [duration]")));
     } else {
-      send(msg.set(F("args error")));
+      send(msg.set(F("command invalid")));
     }
   }
 }
 
 void loop() {
   manageKeyboard();
+  manageBuzzer();
   manageSiren();
   managePowerProbe();
-  wait(100);
+  wait(10);
 }
 
 void correctPasswordEntered() {
@@ -128,7 +146,7 @@ void correctPasswordEntered() {
   }
 }
 
-void managePowerProbe() {
+inline void managePowerProbe() {
   boolean sectorOn = (analogRead(POWER_PROBE) > 900) ? true : false;
   
   if (!sectorOn && !_isOnBattery) {
@@ -136,11 +154,13 @@ void managePowerProbe() {
     send(msg.set(F("on battery")));
     _isOnBattery = true;
     led.setColor(RGBLed::RED);
+    startBuzzer(500);
   } else if (sectorOn && _isOnBattery) {
     DEBUG_PRINT(F("On power supply"));
     send(msg.set(F("on power supply")));
     _isOnBattery = false;
     led.off();
+    startBuzzer(500);
   }
 }
 
@@ -162,7 +182,7 @@ bool isSirenOn() {
   return _sirenState != 0;
 }
 
-void manageSiren() {
+inline void manageSiren() {
   if (_sirenState == 0) {
     // nothing to do
   } else if ((_sirenState % 2 == 1 && _sirenState < _bipNumber * 2 + 2) && millis() - _sirenTime >= 1000) {
@@ -176,11 +196,11 @@ void manageSiren() {
   } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
     DEBUG_PRINT(F("Siren stopped after 60s!"));
     stopSiren();
-    send(msg.set(F("stopped")));
+    send(msg.set(F("siren stopped")));
   }
 }
 
-void manageKeyboard() {
+inline void manageKeyboard() {
     if (_keyboardEnable) {
       char key = _keypad.getKey();
 
@@ -188,7 +208,7 @@ void manageKeyboard() {
       if (key != NO_KEY) {
         DEBUG_PRINT(F("Key pressed:"));
         DEBUG_PRINT(key);
-        buzz(50);
+        startBuzzer(50);
         
         if (key == _password[_keyboardPosition]) {
           _keyboardPosition++;
@@ -200,7 +220,7 @@ void manageKeyboard() {
           DEBUG_PRINT(F("Correct password entered!"));
           _keyboardPosition = 0;
           led.flash(RGBLed::GREEN, 100);
-          buzz(200);
+          startBuzzer(500);
           correctPasswordEntered();
         }
       }
@@ -216,16 +236,36 @@ void manageKeyboard() {
 
 void startSirenSound(char level) {
     analogWrite(SIREN, map(level, 0, 100, 0, 255));
+    led.setColor(RGBLed::GREEN);
 }
 
 void stopSirenSound() {
     analogWrite(SIREN, 0);
+
+    if (_isOnBattery) {
+      led.setColor(RGBLed::RED);
+    } else {
+      led.off();
+    }
 }
 
-void buzz(int timer) {
-    analogWrite(BUZZER, 255);
-    wait(timer);
-    analogWrite(BUZZER, 0);
+void startBuzzer(int duration) {
+    _buzzerDuration = duration;
+    _buzzerStartTime = millis();
+    _buzzerIsOn = true;
+    digitalWrite(BUZZER, HIGH);
+}
+
+void stopBuzzer() {
+    digitalWrite(BUZZER, LOW);
+    _buzzerIsOn = false;
+}
+
+inline void manageBuzzer() {
+    if (_buzzerIsOn && millis() - _buzzerStartTime >= _buzzerDuration) {
+        stopBuzzer();
+    }
+        
 }
 
 void putKeypadToInterruptMode() {
@@ -248,9 +288,9 @@ void initPasswordValue() {
   DEBUG_PRINT(_password);
 }
 
-void savePassword(String password) {
+void savePassword(const char* password) {
     for (char i=0; i<strlen(_password); i++) {
-        _password[i] = password.charAt(i);
+        _password[i] = password[i];
         saveState(i, _password[i]);
     }
     
@@ -261,20 +301,4 @@ void savePassword(String password) {
 void keyboardInterrupt() {
   _keyboardEnable = true;
   _keyboardEnableTime = millis();
-}
-
-String parseMsg(String data, char separator, int index) {
-  int found = 0;
-  int strIndex[] = {0, -1};
-  int maxIndex = data.length() - 1;
-
-  for (int i = 0; i <= maxIndex && found <= index; i++) {
-    if (data.charAt(i) == separator || i == maxIndex) {
-      found++;
-      strIndex[0] = strIndex[1] + 1;
-      strIndex[1] = (i == maxIndex) ? i + 1 : i;
-    }
-  }
-
-  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
