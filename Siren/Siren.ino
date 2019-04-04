@@ -147,7 +147,7 @@ void correctPasswordEntered() {
 }
 
 inline void managePowerProbe() {
-  boolean sectorOn = (analogRead(POWER_PROBE) > 900) ? true : false;
+  boolean sectorOn = (analogRead(POWER_PROBE) > 400) ? true : false;
   
   if (!sectorOn && !_isOnBattery) {
     DEBUG_PRINT(F("On battery"));
