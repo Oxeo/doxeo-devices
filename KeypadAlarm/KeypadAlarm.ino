@@ -7,13 +7,14 @@
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
+#define MY_RX_MESSAGE_BUFFER_SIZE (10)
 
 // RF24 PA level
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 
 // Enable hardware signing
 #define MY_SIGNING_ATSHA204
-//#define MY_SIGNING_REQUEST_SIGNATURES
+#define MY_SIGNING_REQUEST_SIGNATURES
 
 // Define pins
 #define BUZZER 5
@@ -103,8 +104,8 @@ void loop() {
       digitalWrite(GREEN_LED, HIGH);
       buzz(200);
       digitalWrite(GREEN_LED, LOW);
-      send(msg.set(F("pe")));
-      _keyboardPosition = 0;
+      send(msg.set(F("password")));
+      _keyboardPosition = 1;
       _keyboardInterruptTime = millis() - 60000;
     }
   }
