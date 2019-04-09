@@ -7,7 +7,7 @@
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
-#define MY_RX_MESSAGE_BUFFER_SIZE (10)
+#define MY_RX_MESSAGE_BUFFER_SIZE (5)
 
 // RF24 PA level
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
@@ -20,6 +20,7 @@
 #define BUZZER 5
 #define GREEN_LED A4
 #define RED_LED A5
+#define BELL 6
 
 // Debug print
 #if defined(MY_DEBUG)
@@ -33,7 +34,6 @@
 #include <Keypad.h>
 
 // Keypad
-
 char* _password = "0000";
 int _keyboardPosition = 0;
 unsigned long _keyboardInterruptTime = 0;
@@ -49,6 +49,10 @@ byte _rowPins[_rows] = {8, 7, 4, 3}; //connect to the row pinouts of the keypad
 byte _colPins[_cols] = {A0, A1, A2}; //connect to the column pinouts of the keypad
 Keypad _keypad = Keypad(makeKeymap(_keys), _rowPins, _colPins, _rows, _cols);
 
+// State
+enum State_enum {NOMINAL, CHANGE_PASSWORD, CHECK_PASSWORD};
+uint8_t _state = NOMINAL;
+
 // Msg
 MyMessage msg(0, V_CUSTOM);
 
@@ -57,27 +61,25 @@ void before()
   pinMode(BUZZER, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
   pinMode(RED_LED, OUTPUT);
+  pinMode(BELL, INPUT);
   digitalWrite(BUZZER, LOW);
-  digitalWrite(GREEN_LED, HIGH);
-  digitalWrite(RED_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(RED_LED, HIGH);
 }
 
 void setup() {
   initPasswordValue();
   send(msg.set(F("system started")));
-  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(RED_LED, LOW);
   for (byte i = 0; i < 10; i++) {
     if (i % 2 == 0) {
       digitalWrite(GREEN_LED, HIGH);
-      digitalWrite(RED_LED, LOW);
     } else {
       digitalWrite(GREEN_LED, LOW);
-      digitalWrite(RED_LED, HIGH);
     }
     delay(200);
   }
-  digitalWrite(GREEN_LED, LOW);
-  digitalWrite(RED_LED, LOW);
+  _keyboardInterruptTime = 0;
 }
 
 void presentation() {
@@ -92,26 +94,79 @@ void loop() {
   if (key != NO_KEY) {
     DEBUG_PRINT(F("Key pressed:"));
     DEBUG_PRINT(key);
+    _keyboardInterruptTime = millis();
 
-    if (key == _password[_keyboardPosition]) {
+    if (_state == NOMINAL) {
+      if (key == _password[_keyboardPosition]) {
+        _keyboardPosition++;
+      } else if (key == _password[0]) {
+        _keyboardPosition = 1;
+      } else {
+        _keyboardPosition = 0;
+      }
+
+      if (_keyboardPosition == 4) {
+        _keyboardPosition = 0;
+
+        if (digitalRead(BELL) == LOW) {
+          DEBUG_PRINT(F("Correct password entered!"));
+          digitalWrite(GREEN_LED, HIGH);
+          send(msg.set(F("ok")));
+          delay(200);
+          digitalWrite(GREEN_LED, LOW);
+          _keyboardInterruptTime -= 60000;
+        } else {
+          DEBUG_PRINT(F("change password"));
+          _state = CHANGE_PASSWORD;
+          digitalWrite(RED_LED, HIGH);
+          digitalWrite(GREEN_LED, HIGH);
+          buzz(200);
+        }
+      }
+    } else if (_state == CHANGE_PASSWORD) {
+      _password[_keyboardPosition] = key;
       _keyboardPosition++;
-    } else {
-      _keyboardPosition = 0;
-    }
 
-    if (_keyboardPosition == 4) {
-      DEBUG_PRINT(F("Correct password entered!"));
-      digitalWrite(GREEN_LED, HIGH);
-      buzz(200);
-      digitalWrite(GREEN_LED, LOW);
-      send(msg.set(F("password")));
-      _keyboardPosition = 1;
-      _keyboardInterruptTime = millis() - 60000;
+      if (_keyboardPosition == 4) {
+        DEBUG_PRINT(F("check password"));
+        _state = CHECK_PASSWORD;
+        _keyboardPosition = 0;
+        digitalWrite(RED_LED, LOW);
+        delay(500);
+        buzz(10);
+        digitalWrite(RED_LED, HIGH);
+      }
+    } else if (_state == CHECK_PASSWORD) {
+      if (key == _password[_keyboardPosition]) {
+        _keyboardPosition++;
+      } else {
+        DEBUG_PRINT(F("change password failed"));
+        initPasswordValue();
+        _keyboardInterruptTime -= 60000;
+      }
+
+      // success
+      if (_keyboardPosition == 4) {
+        savePassword(_password);
+        for (byte i = 0; i < 10; i++) {
+          if (i % 2 == 0) {
+            digitalWrite(GREEN_LED, LOW);
+          } else {
+            digitalWrite(GREEN_LED, HIGH);
+            buzz(10);
+          }
+          delay(500);
+        }
+        _keyboardInterruptTime -= 60000;
+      }
     }
   }
 
   if (millis() - _keyboardInterruptTime >= 10000) {
     // Sleep until an key is pressed
+    _state = NOMINAL;
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, LOW);
     putKeypadToInterruptMode();
     sleep(digitalPinToInterrupt(_rowPins[_rows - 1]), FALLING, 0);
     _keyboardPosition = 1;
