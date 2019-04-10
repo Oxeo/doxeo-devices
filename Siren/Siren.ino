@@ -33,7 +33,7 @@
 #include <MySensors.h>
 #include <Keypad.h>
 #include <RGBLed.h>  // https://github.com/wilmouths/RGBLed
-#include "Parser.h"
+#include <Parser.h>
 
 // Keypad
 char* _password = "0000";

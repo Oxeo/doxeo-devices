@@ -32,6 +32,14 @@
 // Includes
 #include <MySensors.h>
 #include <Keypad.h>
+#include <Vcc.h>
+
+// Battery report
+static uint8_t _oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
+const float _vccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
+const float _vccMax        = 2.0*1.6;  // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
+const float _vccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
+static Vcc _vcc(_vccCorrection);
 
 // Keypad
 char* _password = "0000";
@@ -163,10 +171,11 @@ void loop() {
   }
 
   if (millis() - _keyboardInterruptTime >= 10000) {
-    // Sleep until an key is pressed
+    // Sleep until key 0 is pressed
     _state = NOMINAL;
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, LOW);
+    reportBatteryLevel();
     putKeypadToInterruptMode();
     sleep(digitalPinToInterrupt(_rowPins[_rows - 1]), FALLING, 0);
     _keyboardPosition = 1;
@@ -210,4 +219,22 @@ void savePassword(const char* password) {
 
   DEBUG_PRINT(F("New password saved:"));
   DEBUG_PRINT(_password);
+}
+
+inline void reportBatteryLevel() {
+  const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + _vcc.Read_Perc(_vccMin, _vccMax));
+
+#ifdef MY_DEBUG
+  Serial.print(F("Vbat "));
+  Serial.print(_vcc.Read_Volts());
+  Serial.print(F("\tPerc "));
+  Serial.println(batteryPcnt);
+#endif
+
+  // Battery readout should only go down. So report only when new value is smaller than previous one.
+  if ( batteryPcnt < _oldBatteryPcnt )
+  {
+    sendBatteryLevel(batteryPcnt);
+    _oldBatteryPcnt = batteryPcnt;
+  }
 }
