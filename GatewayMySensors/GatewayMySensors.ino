@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
@@ -41,6 +41,6 @@ void presentation()
 
 void loop()
 {
-  //wait(10);
+  wait(5);
 }
 
