@@ -98,7 +98,7 @@ void receive(const MyMessage &myMsg)
     parser.parse(myMsg.getString());
 
     if (parser.get(0) == NULL) {
-        send(msg.set(F("cmd missing! send help")));
+      send(msg.set(F("cmd missing! send help")));
     } else if (parser.isEqual(0, "ping")) {
       send(msg.set(F("pong")));
     } else if (parser.isEqual(0, "stop")) {

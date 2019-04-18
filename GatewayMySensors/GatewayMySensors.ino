@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
@@ -19,7 +19,7 @@
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
-#define MY_RX_MESSAGE_BUFFER_SIZE (10)
+#define MY_RX_MESSAGE_BUFFER_SIZE (8)
 
 // Enable inclusion mode
 #define MY_INCLUSION_MODE_FEATURE
