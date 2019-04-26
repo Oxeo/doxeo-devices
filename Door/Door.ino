@@ -37,7 +37,7 @@ void setup()
 void presentation()
 {
   wait(500);
-  sendSketchInfo("Door 2", "1.5");
+  sendSketchInfo("Door", "1.6");
   wait(500);
   present(DOOR_ID, S_DOOR);
 }
@@ -87,6 +87,8 @@ void loop()
   }
 #endif
 
-  // Sleep until something happens with the sensor
-  sleep(DOOR_PIN - 2, CHANGE, 0);
+  if (digitalRead(DOOR_PIN) == sentValue) {
+    // Sleep until something happens with the sensor
+    sleep(DOOR_PIN - 2, CHANGE, 0);
+  }
 }
