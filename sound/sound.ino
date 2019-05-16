@@ -22,7 +22,8 @@
 
 #define DFPLAYER_RX_PIN 8
 #define DFPLAYER_TX_PIN 7
-#define RELAY 5
+#define RELAY1 5
+#define RELAY2 6
 #define LED A3
 
 // DF Player
@@ -50,8 +51,10 @@ Parser parser = Parser('-');
 void before()
 {
   // init PIN
-  pinMode(RELAY, OUTPUT);
-  digitalWrite(RELAY, LOW);
+  pinMode(RELAY1, OUTPUT);
+  digitalWrite(RELAY1, LOW);
+  pinMode(RELAY2, OUTPUT);
+  digitalWrite(RELAY2, LOW);
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
 }
@@ -86,6 +89,16 @@ void receive(const MyMessage &myMsg)
       changeState(WAITING);
     } else if (parser.isEqual(0, "ping")) {
       send(msg.set(F("pong")));
+    } else if (parser.isEqual(0, "relay")) {
+      if (parser.isEqual(1, "on")) {
+        digitalWrite(RELAY2, HIGH);
+        send(msg.set(F("relay on")));
+      } else if (parser.isEqual(1, "off")) {
+        digitalWrite(RELAY2, LOW);
+        send(msg.set(F("relay off")));
+      } else {
+        send(msg.set(F("args error")));
+      }
     } else if (parser.getInt(0) < 1 || parser.getInt(0) > 99) {
       send(msg.set(F("folder arg error")));
     } else if (parser.getInt(1) < 1 || parser.getInt(1) > 999) {
@@ -170,12 +183,12 @@ void initDfPlayer() {
 }
 
 void startAmplifier() {
-  digitalWrite(RELAY, HIGH);
+  digitalWrite(RELAY1, HIGH);
   digitalWrite(LED, HIGH);
 }
 
 void stopAmplifier() {
-  digitalWrite(RELAY, LOW);
+  digitalWrite(RELAY1, LOW);
   digitalWrite(LED, LOW);
 }
 
