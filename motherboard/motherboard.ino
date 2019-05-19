@@ -1,6 +1,8 @@
 #include <RCSwitch.h>
 #include <OxeoDio.h>
 #include <Timer.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
 #include "Nrf.h"
 
 #include <DoxeoConfig.h>
@@ -13,6 +15,8 @@
 #define PIN_SWITCH0 A0
 #define PIN_SWITCH1 A1
 #define PIN_SWITCH2 A2
+#define DFPLAYER_RX_PIN 6
+#define DFPLAYER_TX_PIN 7
 
 Nrf nrf(PIN_NRF_INTERRUPT);
 
@@ -28,6 +32,10 @@ int timerIdDioReceptor = -1;
 RCSwitch rcSwitch = RCSwitch();
 unsigned long oldSenderRf = 0;
 int timerIdRfReceptor = -1;
+
+// DF Player
+SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
+DFRobotDFPlayerMini dfPlayer;
 
 void setup() {
   // init pin
@@ -52,6 +60,9 @@ void setup() {
   dio.setReceiverPin(PIN_RF_RECEIVER);
   dio.setSenderPin(PIN_RF_TRANSMITTER);
 
+  // init DFPlayer
+  initDfPlayer();
+
   // init serial
   Serial.begin(9600);
   
@@ -59,6 +70,10 @@ void setup() {
 
   // play buzzer
   timer.pulseImmediate(PIN_BUZZER, 20, HIGH);
+
+  // play sound
+  dfPlayer.volume(25);  //Set volume value. From 0 to 30
+  dfPlayer.play(1);
 }
 
 void loop() {
@@ -80,6 +95,9 @@ void loop() {
       Serial.println(command);
     } else if (commandType == "box" && commandName == "buzzer") {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
+      Serial.println(command);
+    } else if (commandType == "box" && commandName == "sound") {
+      dfPlayer.play(commandValue.toInt());
       Serial.println(command);
     } else if (commandType == "switch") {
       if (commandValue == "on") {
@@ -126,6 +144,11 @@ void loop() {
   
   nrf.update();
 
+   // print DFPlayer status
+  if (dfPlayer.available()) {
+    dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+  }
+
   // timer management
   timer.update();
 }
@@ -166,3 +189,64 @@ void send(String type, String name, String value) {
   Serial.println(type + ";" + name + ";" + value);
 }
 
+void initDfPlayer() {
+  dfPlayerSerial.begin(9600);
+
+  if (!dfPlayer.begin(dfPlayerSerial)) {
+    send(F("sound"), F("status"), F("Init error"));
+  }
+
+  dfPlayer.setTimeOut(500);
+}
+
+byte dfPlayerDetail(uint8_t type, int value) {
+  switch (type) {
+    case TimeOut:
+      send(F("sound"), F("status"), F("time out"));
+      return 1;
+    case WrongStack:
+      send(F("sound"), F("status"), F("wrong stack"));
+      return 2;
+    case DFPlayerCardInserted:
+      send(F("sound"), F("status"), F("card inserted"));
+      return 3;
+    case DFPlayerCardRemoved:
+      send(F("sound"), F("status"), F("card removed"));
+      return 4;
+    case DFPlayerCardOnline:
+      send(F("sound"), F("status"), F("card online"));
+      return 5;
+    case DFPlayerPlayFinished:
+      send(F("sound"), F("status"), F("play finished"));
+      return 6;
+    case DFPlayerError:
+      switch (value) {
+        case Busy:
+          send(F("sound"), F("status"), F("card not found"));
+          return 7;
+        case Sleeping:
+          send(F("sound"), F("status"), F("sleeping"));
+          return 8;
+        case SerialWrongStack:
+          send(F("sound"), F("status"), F("get wrong ttack"));
+          return 9;
+        case CheckSumNotMatch:
+          send(F("sound"), F("status"), F("checksum not match"));
+          return 10;
+        case FileIndexOut:
+          send(F("sound"), F("status"), F("file index out of bound"));
+          return 11;
+        case FileMismatch:
+          send(F("sound"), F("status"), F("cannot find file"));
+          return 12;
+        case Advertise:
+          send(F("sound"), F("status"), F("in advertise"));
+          return 13;
+        default:
+          send(F("sound"), F("status"), F("unknown error"));
+          return 14;
+      }
+    default:
+      return 0;
+  }
+}
