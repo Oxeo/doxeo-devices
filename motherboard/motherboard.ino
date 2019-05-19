@@ -8,7 +8,7 @@
 #include <DoxeoConfig.h>
 
 #define PIN_LED_YELLOW A5
-#define PIN_BUZZER 7
+#define PIN_BUZZER 5
 #define PIN_RF_RECEIVER 3
 #define PIN_RF_TRANSMITTER 4
 #define PIN_NRF_INTERRUPT 2
@@ -67,9 +67,6 @@ void setup() {
   Serial.begin(9600);
   
   Serial.println("Doxeoboard started");
-
-  // play buzzer
-  timer.pulseImmediate(PIN_BUZZER, 20, HIGH);
 
   // play sound
   dfPlayer.volume(25);  //Set volume value. From 0 to 30
