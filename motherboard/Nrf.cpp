@@ -48,7 +48,7 @@ void Nrf::update()
   sendProcess();
 }
 
-void Nrf::checkNewMessage()
+inline void Nrf::checkNewMessage()
 {
   if (_newMsgReceived) {
     _newMsgReceived = false;
@@ -79,7 +79,7 @@ void Nrf::checkNewMessage()
   }
 }
 
-void Nrf::unstackMessageToSend()
+inline void Nrf::unstackMessageToSend()
 {
   if (_remainingSend == 0 && !_sendQueue.isEmpty()) {
     String queue = _sendQueue.pop();
@@ -118,7 +118,7 @@ void Nrf::unstackMessageToSend()
   }
 }
 
-void Nrf::sendProcess()
+inline void Nrf::sendProcess()
 {
   if (_remainingSend == 0) {
     // nothing to do
@@ -186,4 +186,3 @@ String Nrf::parseCommand(String data, char separator, int index)
 
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
-

@@ -7,7 +7,6 @@
 
 #include <DoxeoConfig.h>
 
-#define PIN_LED_YELLOW A5
 #define PIN_BUZZER 5
 #define PIN_RF_RECEIVER 3
 #define PIN_RF_TRANSMITTER 4
@@ -36,15 +35,14 @@ int timerIdRfReceptor = -1;
 // DF Player
 SoftwareSerial dfPlayerSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
 DFRobotDFPlayerMini dfPlayer;
+unsigned long dfPlayerTimer = 0;
 
 void setup() {
   // init pin
-  pinMode(PIN_LED_YELLOW, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_SWITCH0, OUTPUT);
   pinMode(PIN_SWITCH1, OUTPUT);
   pinMode(PIN_SWITCH2, OUTPUT);
-  digitalWrite(PIN_LED_YELLOW, LOW);
   digitalWrite(PIN_BUZZER, LOW);
   digitalWrite(PIN_SWITCH0, LOW);
   digitalWrite(PIN_SWITCH1, LOW);
@@ -69,7 +67,7 @@ void setup() {
   Serial.println("Doxeoboard started");
 
   // play sound
-  dfPlayer.volume(25);  //Set volume value. From 0 to 30
+  dfPlayer.volume(20);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
 }
 
@@ -94,7 +92,10 @@ void loop() {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
       Serial.println(command);
     } else if (commandType == "box" && commandName == "sound") {
-      dfPlayer.play(commandValue.toInt());
+      int sound = Nrf::parseCommand(commandValue, '-', 0).toInt();
+      int volume = Nrf::parseCommand(commandValue, '-', 1).toInt();
+      dfPlayer.volume(volume);
+      dfPlayer.play(sound);
       Serial.println(command);
     } else if (commandType == "switch") {
       if (commandValue == "on") {
@@ -114,7 +115,6 @@ void loop() {
   unsigned long sender = 0;
   if (!nrf.emergencySending() && (sender = dio.read()) != 0) {  // take 50ms
     if (sender != oldSenderDio) {
-      timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
       send("dio", String(sender), "event");
       oldSenderDio = sender;
       if (timerIdDioReceptor != -1) {
@@ -128,7 +128,6 @@ void loop() {
   if (!nrf.emergencySending() && rcSwitch.available()) {
     unsigned long sendValue = rcSwitch.getReceivedValue();
     if (sendValue != 0 && sendValue != oldSenderRf) {
-      timer.pulseImmediate(PIN_LED_YELLOW, 100, HIGH);
       send("rf", String(sendValue), "event");
       oldSenderRf = sendValue;
       if (timerIdRfReceptor != -1) {
@@ -142,8 +141,9 @@ void loop() {
   nrf.update();
 
    // print DFPlayer status
-  if (dfPlayer.available()) {
+  if (millis() - dfPlayerTimer >= 1000 && dfPlayer.available()) {
     dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+    dfPlayerTimer = millis();
   }
 
   // timer management
