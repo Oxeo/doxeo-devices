@@ -65,10 +65,6 @@ void setup() {
   Serial.begin(9600);
   
   Serial.println("Doxeoboard started");
-
-  // play sound
-  dfPlayer.volume(20);  //Set volume value. From 0 to 30
-  dfPlayer.play(1);
 }
 
 void loop() {
@@ -92,10 +88,17 @@ void loop() {
       timer.pulseImmediate(PIN_BUZZER, commandValue.toInt(), HIGH);
       Serial.println(command);
     } else if (commandType == "box" && commandName == "sound") {
-      int sound = Nrf::parseCommand(commandValue, '-', 0).toInt();
-      int volume = Nrf::parseCommand(commandValue, '-', 1).toInt();
-      dfPlayer.volume(volume);
-      dfPlayer.play(sound);
+      int folder = Nrf::parseCommand(commandValue, '-', 0).toInt();
+      int sound = Nrf::parseCommand(commandValue, '-', 1).toInt();
+      int volume = Nrf::parseCommand(commandValue, '-', 2).toInt();
+
+      if (folder != 0 && sound != 0 && volume != 0) {
+        dfPlayer.volume(map(volume, 0, 100, 0, 30));
+        dfPlayer.playFolder(folder, sound);
+      } else {
+        dfPlayer.stop();
+      }
+      
       Serial.println(command);
     } else if (commandType == "switch") {
       if (commandValue == "on") {
@@ -105,7 +108,7 @@ void loop() {
       }
       Serial.println(command);
     } else if (commandType == "name") {
-      send("name", "doxeo_board", "v1.0.0");
+      send("name", "doxeo_board", "v2.0.0");
     } else {
       Serial.println("error;unknown command: " + command);
     }
