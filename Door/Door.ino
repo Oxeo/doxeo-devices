@@ -37,7 +37,7 @@ void setup()
 void presentation()
 {
   wait(500);
-  sendSketchInfo("Door", "1.6");
+  sendSketchInfo("Door", "1.7");
   wait(500);
   present(DOOR_ID, S_DOOR);
 }
@@ -55,13 +55,13 @@ void loop()
 
   if (value != sentValue) {
     // Value has changed from last transmission, send the updated value
-    for (char i = 0; i < 5; i++) {
+    for (char i = 1; i < 6; i++) {
       bool success = send(msg.set(value == HIGH));
 
       if (success) {
-        i = 100;
+        break;
       } else {
-        delay(100);
+        delay(500 * i);
       }
     }
 
