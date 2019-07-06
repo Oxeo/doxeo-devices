@@ -9,7 +9,7 @@
 #define MY_RF24_IRQ_PIN (2)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 // Enable repeater functionality
 #define MY_REPEATER_FEATURE
@@ -31,12 +31,12 @@
 
 // Includes
 #include <MySensors.h>
-#include <Keypad.h>
+//#include <Keypad.h>
 #include <RGBLed.h>  // https://github.com/wilmouths/RGBLed
 #include <Parser.h>
 
 // Keypad
-char* _password = "0000";
+/*char* _password = "0000";
 int _keyboardPosition = 0;
 bool _keyboardEnable = false;
 unsigned long _keyboardEnableTime = 0;
@@ -51,6 +51,7 @@ char _keys[_rows][_cols] = {
 byte _rowPins[_rows] = {8, 7, 4, 3}; //connect to the row pinouts of the keypad
 byte _colPins[_cols] = {A0, A1, A2}; //connect to the column pinouts of the keypad
 Keypad _keypad = Keypad(makeKeymap(_keys), _rowPins, _colPins, _rows, _cols);
+*/
 
 // Siren
 unsigned long _sirenTime = 0;
@@ -81,8 +82,8 @@ void before()
 }
 
 void setup() {
-  attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
-  initPasswordValue();
+  //attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
+  //initPasswordValue();
   led.flash(RGBLed::GREEN, 500);
   send(msg.set(F("system started")));
 }
@@ -94,7 +95,7 @@ void presentation() {
 
 void receive(const MyMessage &myMsg)
 {
-  if (myMsg.type == V_CUSTOM) {
+  if (myMsg.type == V_CUSTOM && myMsg.sensor == 0) {
     parser.parse(myMsg.getString());
 
     if (parser.get(0) == NULL) {
@@ -107,13 +108,13 @@ void receive(const MyMessage &myMsg)
     } else if (parser.isEqual(0, "start") && parser.get(1) != NULL && parser.get(2) != NULL) {
       startSiren(parser.getInt(1), parser.getInt(2));
       send(msg.set(F("siren started")));
-    } else if (parser.isEqual(0, "password") && parser.get(1) != NULL) {
+/*    } else if (parser.isEqual(0, "password") && parser.get(1) != NULL) {
       if (strlen(parser.get(1)) != 4) {
         send(msg.set(F("password shall be on 4 c")));
       } else {
         savePassword(parser.get(1));
         send(msg.set(F("password saved")));
-      }
+      }*/
     } else if (parser.isEqual(0, "buzzer") && parser.get(1) != NULL) {
       startBuzzer(parser.getInt(1));
       send(msg.set(F("buzzer started")));
@@ -130,13 +131,14 @@ void receive(const MyMessage &myMsg)
 }
 
 void loop() {
-  manageKeyboard();
+  //manageKeyboard();
   manageBuzzer();
   manageSiren();
   managePowerProbe();
-  wait(10);
+  wait(500);
 }
 
+/*
 void correctPasswordEntered() {
   if (isSirenOn()) {
     stopSiren();
@@ -145,6 +147,7 @@ void correctPasswordEntered() {
     send(msg.set(F("password entered")));
   }
 }
+*/
 
 inline void managePowerProbe() {
   boolean sectorOn = (analogRead(POWER_PROBE) > 400) ? true : false;
@@ -200,6 +203,7 @@ inline void manageSiren() {
   }
 }
 
+/*
 inline void manageKeyboard() {
     if (_keyboardEnable) {
       char key = _keypad.getKey();
@@ -233,6 +237,7 @@ inline void manageKeyboard() {
       }
   }
 }
+*/
 
 void startSirenSound(char level) {
     analogWrite(SIREN, map(level, 0, 100, 0, 255));
@@ -268,6 +273,7 @@ inline void manageBuzzer() {
         
 }
 
+/*
 void putKeypadToInterruptMode() {
   for(char i=0; i<_cols; i++) {
     pinMode(_colPins[i], OUTPUT);
@@ -276,7 +282,9 @@ void putKeypadToInterruptMode() {
 
   pinMode(_rowPins[_rows-1], INPUT_PULLUP);
 }
+*/
 
+/*
 void initPasswordValue() {
   if (isAscii(loadState(0))) {
       for (char i=0; i<strlen(_password); i++) {
@@ -302,3 +310,4 @@ void keyboardInterrupt() {
   _keyboardEnable = true;
   _keyboardEnableTime = millis();
 }
+*/

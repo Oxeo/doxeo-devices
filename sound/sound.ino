@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable and select radio type attached
 #define MY_RADIO_RF24
@@ -7,13 +7,13 @@
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
-#define MY_RX_MESSAGE_BUFFER_SIZE (10)
+//#define MY_RX_MESSAGE_BUFFER_SIZE (10)
 
 // RF24 PA level
 #define MY_RF24_PA_LEVEL (RF24_PA_LOW)
 
 // Enable repeater functionality
-#define MY_REPEATER_FEATURE
+//#define MY_REPEATER_FEATURE
 
 #include <MySensors.h>
 #include <SoftwareSerial.h>
@@ -80,7 +80,7 @@ void presentation() {
 
 void receive(const MyMessage &myMsg)
 {
-  if (myMsg.type == V_CUSTOM) {
+  if (myMsg.type == V_CUSTOM && myMsg.sensor == 0) {
     parser.parse(myMsg.getString());
 
     if (parser.isEqual(0, "stop")) {
@@ -147,9 +147,11 @@ void loop() {
       digitalWrite(LED, _ledOn);
       _previousLedChange = millis();
     }
+
+    wait(1000);
+  } else {
+    wait(60000);
   }
-    
-  wait(100);
 }
 
 void changeState(uint8_t state) {
