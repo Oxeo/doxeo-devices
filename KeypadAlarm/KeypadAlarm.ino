@@ -51,7 +51,7 @@ char _keys[_rows][_cols] = {
   {'1', '2', '3'},
   {'4', '5', '6'},
   {'7', '8', '9'},
-  {'*', '0', '#'}
+  {'0', '0', '#'}
 };
 byte _rowPins[_rows] = {8, 7, 4, 3}; //connect to the row pinouts of the keypad
 byte _colPins[_cols] = {A0, A1, A2}; //connect to the column pinouts of the keypad
