@@ -10,7 +10,7 @@
 #define MY_RX_MESSAGE_BUFFER_SIZE (5)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 // Enable hardware signing
 #define MY_SIGNING_ATSHA204
