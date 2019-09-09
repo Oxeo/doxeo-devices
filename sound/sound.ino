@@ -10,7 +10,7 @@
 //#define MY_RX_MESSAGE_BUFFER_SIZE (10)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_LOW)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 // Enable repeater functionality
 //#define MY_REPEATER_FEATURE
@@ -65,14 +65,14 @@ void setup() {
 
   // play sound
   startAmplifier();
-  dfPlayer.volume(20);  //Set volume value. From 0 to 30
+  dfPlayer.volume(5);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
   changeState(PLAYING);
 }
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Sound", "2.0");
+  sendSketchInfo("Sound", "2.1");
 
   // Present sensor to controller
   present(0, S_CUSTOM);
@@ -103,7 +103,7 @@ void receive(const MyMessage &myMsg)
       send(msg.set(F("folder arg error")));
     } else if (parser.getInt(1) < 1 || parser.getInt(1) > 999) {
       send(msg.set(F("sound arg error")));
-    } else if (parser.getInt(2) < 1 || parser.getInt(2) > 30) {
+    } else if (parser.getInt(2) < 1 || parser.getInt(2) > 100) {
       send(msg.set(F("volume arg error")));
     } else {
       if (_state != PLAYING || _oldFolder != parser.getInt(0) || _oldSound != parser.getInt(1) 
@@ -112,7 +112,7 @@ void receive(const MyMessage &myMsg)
         if (_state == SLEEPING) {
           startAmplifier();
         }
-        dfPlayer.volume(parser.getInt(2));
+        dfPlayer.volume(map(parser.getInt(2), 0, 100, 0, 30));
         dfPlayer.playFolder(parser.getInt(0), parser.getInt(1));
         _oldFolder = parser.getInt(0);
         _oldSound = parser.getInt(1);
