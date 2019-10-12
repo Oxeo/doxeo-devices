@@ -65,7 +65,7 @@ void setup() {
 
   // play sound
   startAmplifier();
-  dfPlayer.volume(5);  //Set volume value. From 0 to 30
+  dfPlayer.volume(10);  //Set volume value. From 0 to 30
   dfPlayer.play(1);
   changeState(PLAYING);
 }
