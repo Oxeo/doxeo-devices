@@ -1,10 +1,11 @@
 #define MY_DEBUG
 //#define DHT_SENSOR
-#define PIR
-//#define RF
+//#define PIR
+#define RF
 
 #define MY_RADIO_RF24
 #define MY_RX_MESSAGE_BUFFER_FEATURE
+#define MY_RX_MESSAGE_BUFFER_SIZE (10)
 #define MY_RF24_IRQ_PIN (2)
 #define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 #define MY_REPEATER_FEATURE
@@ -30,19 +31,18 @@
 // Includes
 #include <MySensors.h>
 #include <Parser.h>
-#include <SPI.h>
-#include <DHT.h>
-#include <RCSwitch.h>
 #include <Bounce2.h>
+#include <Timer.h>
 
 // Child ID
-#define CHILD_ID_CMD 0
+#define CHILD_ID_SIREN 0
 #define CHILD_ID_HUM 1
 #define CHILD_ID_TEMP 2
 #define CHILD_ID_PIR 3
 #define CHILD_ID_RF 4
 
 // Siren
+MyMessage msgSiren(CHILD_ID_SIREN, V_CUSTOM);
 unsigned long _sirenTime = 0;
 int _sirenState = 0;
 byte _bipNumber = 0;
@@ -50,6 +50,8 @@ byte _sirenLevel = 100;
 
 // DHT
 #if defined(DHT_SENSOR)
+#include <SPI.h>
+#include <DHT.h>
 MyMessage msgHum(CHILD_ID_HUM, V_HUM);
 MyMessage msgTemp(CHILD_ID_TEMP, V_TEMP);
 DHT dht;
@@ -64,9 +66,10 @@ bool sendPirValue = false;
 
 // RF 433MhZ
 #if defined(RF)
+#include <RCSwitch.h>
 RCSwitch rcSwitch = RCSwitch();
 unsigned long oldSenderRf = 0;
-int timerIdRfReceptor = -1;
+unsigned long oldSenderTfTime = 0;
 MyMessage msgRf(CHILD_ID_RF, V_CUSTOM);
 #endif
 
@@ -74,7 +77,7 @@ MyMessage msgRf(CHILD_ID_RF, V_CUSTOM);
 const byte buttons[] = {BUTTON1_PIN, BUTTON2_PIN};
 Bounce* keys[sizeof(buttons)];
 int button1OldValue = -1;
-byte _password[4] = {0, 1, 0, 1};
+byte _password[4] = {1, 2, 1, 2};
 int _passwordPosition = 0;
 unsigned long _keyboardEnableTime = 0;
 
@@ -83,9 +86,9 @@ bool greenLedOn = false;
 bool redLedOn = false;
 
 // Others
-MyMessage msg(CHILD_ID_CMD, V_CUSTOM);
 bool _isOnBattery = false;
 Parser parser = Parser(' ');
+Timer timer;
 
 void before()
 {
@@ -128,7 +131,7 @@ void setup() {
     sleep(200);
   }
 
-  send(msg.set(F("system started")));
+  send(msgSiren.set(F("system started")));
 
   setGreenLedOn(false);
   setRedLedOn(false);
@@ -136,7 +139,7 @@ void setup() {
 
 void presentation() {
   sendSketchInfo("Siren 2", "1.0");
-  present(CHILD_ID_CMD, S_CUSTOM);
+  present(CHILD_ID_SIREN, S_CUSTOM);
   present(CHILD_ID_HUM, S_HUM);
   present(CHILD_ID_TEMP, S_TEMP);
   present(CHILD_ID_PIR, S_MOTION);
@@ -149,17 +152,17 @@ void receive(const MyMessage &myMsg)
     parser.parse(myMsg.getString());
 
     if (parser.get(0) == NULL) {
-      send(msg.set(F("cmd missing! send help")));
+      send(msgSiren.set(F("cmd missing! send help")));
     } else if (parser.isEqual(0, "ping")) {
-      send(msg.set(F("pong")));
+      // nothing to do
     } else if (parser.isEqual(0, "stop")) {
       stopSiren();
-      send(msg.set(F("siren stopped by user")));
+      send(msgSiren.set(F("siren stopped by user")));
     } else if (parser.isEqual(0, "start") && parser.get(1) != NULL && parser.get(2) != NULL) {
       startSiren(parser.getInt(1), parser.getInt(2));
-      send(msg.set(F("siren started")));
+      send(msgSiren.set(F("siren started")));
     } else {
-      send(msg.set(F("command invalid")));
+      send(msgSiren.set(F("command invalid")));
     }
   }
 }
@@ -171,14 +174,17 @@ void loop() {
   managePirSensor();
   manageRfReceptor();
   manageButtons();
+  timer.update();
 }
 
 inline void manageRfReceptor() {
 #if defined(RF)
   if (rcSwitch.available()) {
     unsigned long value = rcSwitch.getReceivedValue();
-    if (value != 0) {
+    if (value != 0 && (value != oldSenderRf || millis() - oldSenderTfTime > 1000)) {
       send(msgRf.set(value));
+      oldSenderRf = value;
+      oldSenderTfTime = millis();
     }
     rcSwitch.resetAvailable();
   }
@@ -210,18 +216,18 @@ inline void manageButtons() {
     if (_passwordPosition == 4) {
       DEBUG_PRINT(F("Correct password entered!"));
       _passwordPosition = 0;
-      setGreenLedOn(true);
+      timer.pulseImmediate(GREEN_LED_PIN, 3000, HIGH);
 
       if (isSirenOn()) {
         stopSiren();
-        send(msg.set(F("stopped by password")));
+        send(msgSiren.set(F("stopped by password")));
       } else {
-        send(msg.set(F("password entered")));
+        send(msgSiren.set(F("password entered")));
       }
     }
   }
 
-  if (_passwordPosition !=0 && millis() - _keyboardEnableTime >= 5000) {
+  if (_passwordPosition !=0 && millis() - _keyboardEnableTime >= 2000) {
     _passwordPosition = 0;
   }
 }
@@ -268,13 +274,13 @@ inline void managePowerProbe() {
   if (analogRead(POWER_PROBE_PIN) > 400) {
     if (_isOnBattery) {
       DEBUG_PRINT(F("On power supply"));
-      send(msg.set(F("on power supply")));
+      send(msgSiren.set(F("on power supply")));
       _isOnBattery = false;
     }
   } else {
     if (!_isOnBattery) {
       DEBUG_PRINT(F("On battery"));
-      send(msg.set(F("on battery")));
+      send(msgSiren.set(F("on battery")));
       _isOnBattery = true;
     }
   }
@@ -311,7 +317,7 @@ inline void manageSiren() {
     } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
       DEBUG_PRINT(F("Siren stopped after 60s!"));
       stopSiren();
-      send(msg.set(F("siren stopped")));
+      send(msgSiren.set(F("siren stopped")));
     }
   }
 }
