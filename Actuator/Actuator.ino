@@ -9,7 +9,7 @@
 #define MY_RF24_IRQ_PIN (2)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 #include <MySensors.h>
 
