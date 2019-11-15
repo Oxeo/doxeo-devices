@@ -38,10 +38,11 @@ static Vcc _vcc(_vccCorrection);
 
 void before()
 {
+  pinMode(SWITCH_PIN, INPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(BLUE_LED_PIN, OUTPUT);
-  digitalWrite(BLUE_LED_PIN, HIGH);
-  wait(1000);
-  digitalWrite(BLUE_LED_PIN, LOW);
+  pinMode(RED_LED_PIN, OUTPUT);
+  analogWrite(RED_LED_PIN, 200);
 }
 
 void presentation()
@@ -53,10 +54,6 @@ void presentation()
 
 void setup()
 {
-  pinMode(SWITCH_PIN, INPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(BLUE_LED_PIN, OUTPUT);
   loadTargetTemperature();
   loadMode();
   runningLight();
@@ -120,18 +117,16 @@ void loop()
     } else if (_state == COLD) {
       _coldCpt++;
       
-      if (_coldCpt >= 120) {  // sleeping mode after 10 minutes
+      if (_coldCpt >= 60) {  // sleeping mode after 1 minutes
         changeState(SLEEPING);
       }
     }
 
-    if (sleep(0, FALLING, 1000) == 0) {
-      delay(1000);
-      if (digitalRead(SWITCH_PIN) == LOW) {
-        saveTargetTemperature(temperature);
-        blinkRedLed();
-        changeState(STARTING);
-      }
+    delay(1000);
+    if (digitalRead(SWITCH_PIN) == LOW) {
+      saveTargetTemperature(temperature);
+      blinkRedLed();
+      changeState(STARTING);
     }
   }
 }
@@ -163,7 +158,7 @@ void changeState(uint8_t state) {
       _oldTemperature = -100;
       break;
     case HOT:
-      digitalWrite(RED_LED_PIN, HIGH);
+      analogWrite(RED_LED_PIN, 50);
       digitalWrite(GREEN_LED_PIN, LOW);
       digitalWrite(BLUE_LED_PIN, LOW);
       break;
@@ -180,7 +175,7 @@ void changeState(uint8_t state) {
     case COLD:
       digitalWrite(RED_LED_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, LOW);
-      digitalWrite(BLUE_LED_PIN, HIGH);
+      analogWrite(BLUE_LED_PIN, 50);
       _coldCpt = 0;
       break;
   }
@@ -249,7 +244,13 @@ void changeMode(int mode) {
 float getTemperature() {
   pinMode(TEMP_POWER, OUTPUT);
   digitalWrite(TEMP_POWER, HIGH);
-  sleep(50);
+
+  if (_state == SLEEPING) {
+    sleep(50);
+  } else {
+    wait(100);  
+  }
+  
   Wire.begin(); // Init I2C Bus
   
   // Données brute de température
@@ -299,13 +300,13 @@ void reportBatteryLevel() {
 }
 
 void runningLight() {
-  digitalWrite(RED_LED_PIN, HIGH);
+  analogWrite(RED_LED_PIN, 200);
   wait(500);
   digitalWrite(RED_LED_PIN, LOW);
   digitalWrite(GREEN_LED_PIN, HIGH);
   wait(500);
   digitalWrite(GREEN_LED_PIN, LOW);
-  digitalWrite(BLUE_LED_PIN, HIGH);
+  analogWrite(BLUE_LED_PIN, 200);
   wait(500);
   digitalWrite(BLUE_LED_PIN, LOW);
 }
@@ -317,7 +318,7 @@ void blinkRedLed() {
 
   for (char i = 0; i < 40; i++) {
     if (i % 2 == 0) {
-      digitalWrite(RED_LED_PIN, HIGH);
+      analogWrite(RED_LED_PIN, 200);
     } else {
       digitalWrite(RED_LED_PIN, LOW);
     }
@@ -335,7 +336,7 @@ void blinkBlueLed(char numberOfBlink) {
 
   for (char i = 0; i < numberOfBlink * 2; i++) {
     if (i % 2 == 0) {
-      digitalWrite(BLUE_LED_PIN, HIGH);
+      analogWrite(BLUE_LED_PIN, 200);
     } else {
       digitalWrite(BLUE_LED_PIN, LOW);
     }
@@ -345,4 +346,3 @@ void blinkBlueLed(char numberOfBlink) {
 
   digitalWrite(BLUE_LED_PIN, LOW);
 }
-
