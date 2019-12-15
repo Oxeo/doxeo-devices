@@ -8,6 +8,13 @@
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 #define MY_TRANSPORT_MAX_TX_FAILURES (3u)
 
+// Debug print
+#if defined(MY_DEBUG)
+#define DEBUG_PRINT(str) Serial.println(str);
+#else
+#define DEBUG_PRINT(str)
+#endif
+
 #include <MySensors.h>
 
 #define DOOR_ID 0
@@ -37,35 +44,30 @@ void setup()
 void presentation()
 {
   wait(500);
-  sendSketchInfo("Door", "1.7");
+  sendSketchInfo("Door", "1.8");
   wait(500);
   present(DOOR_ID, S_DOOR);
 }
 
-// Loop will iterate on changes on the BUTTON_PINs
+void receive(const MyMessage &myMsg)
+{
+  DEBUG_PRINT("message received");
+}
+
 void loop()
 {
-  uint8_t value;
+  uint8_t tripped;
   static uint8_t sentValue = 2;
 
   // Short delay to allow buttons to properly settle
   delay(50);
 
-  value = digitalRead(DOOR_PIN);
+  tripped = digitalRead(DOOR_PIN);
 
-  if (value != sentValue) {
-    // Value has changed from last transmission, send the updated value
-    for (char i = 1; i < 6; i++) {
-      bool success = send(msg.set(value == HIGH));
-
-      if (success) {
-        break;
-      } else {
-        delay(500 * i);
-      }
-    }
-
-    sentValue = value;
+  if (tripped != sentValue) {
+    DEBUG_PRINT("tripped");
+    sendWithRetry(msg.set(tripped == HIGH), 10);
+    sentValue = tripped;
   }
 
 #ifdef REPORT_BATTERY_LEVEL
@@ -91,4 +93,28 @@ void loop()
     // Sleep until something happens with the sensor
     sleep(DOOR_PIN - 2, CHANGE, 0);
   }
+}
+
+void sendWithRetry(MyMessage &message, const byte retryNumber) {
+  byte counter = retryNumber;
+  bool success = false;
+
+  do {
+    DEBUG_PRINT("send message");
+    success = send(message, true);
+
+    if (success) {
+      success = wait(500, message.getCommand(), message.type);
+
+      if (!success) {
+        DEBUG_PRINT("no software ACK");
+      }
+    } else {
+      DEBUG_PRINT("no hardware ACK");
+    }
+    
+    if (!success && counter != 0 && (retryNumber - counter) > 0) {
+      sleep(500 * (retryNumber - counter));
+    }
+  } while (!success && counter--);
 }
