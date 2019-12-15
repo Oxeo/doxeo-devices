@@ -1,6 +1,6 @@
 #define MY_DEBUG
 //#define DHT_SENSOR
-//#define PIR
+#define PIR
 #define RF
 
 #define MY_RADIO_RF24
@@ -50,7 +50,6 @@ byte _sirenLevel = 100;
 
 // DHT
 #if defined(DHT_SENSOR)
-#include <SPI.h>
 #include <DHT.h>
 MyMessage msgHum(CHILD_ID_HUM, V_HUM);
 MyMessage msgTemp(CHILD_ID_TEMP, V_TEMP);
@@ -77,7 +76,7 @@ MyMessage msgRf(CHILD_ID_RF, V_CUSTOM);
 const byte buttons[] = {BUTTON1_PIN, BUTTON2_PIN};
 Bounce* keys[sizeof(buttons)];
 int button1OldValue = -1;
-byte _password[4] = {1, 2, 1, 2};
+byte _password[4] = {1, 2, 2, 1};
 int _passwordPosition = 0;
 unsigned long _keyboardEnableTime = 0;
 
@@ -109,7 +108,7 @@ void setup() {
   dht.setup(DHT_PIN);
   sleep(dht.getMinimumSamplingPeriod());
 #endif
-
+  
 #if defined(RF)
   rcSwitch.enableReceive(digitalPinToInterrupt(RF_PIN));
 #endif
@@ -128,8 +127,9 @@ void setup() {
       setGreenLedOn(true);
       setRedLedOn(false);
     }
-    sleep(200);
+    delay(100);
   }
+
 
   send(msgSiren.set(F("system started")));
 
@@ -237,12 +237,12 @@ inline void manageDhtSensor() {
   if ((millis() - lastSendTemperatureTime) >= 600000) {
     lastSendTemperatureTime = millis();
     dht.readSensor(true); // Force reading sensor, so it works also after sleep
-
+    
     float temperature = dht.getTemperature();
     if (!isnan(temperature)) {
       send(msgTemp.set(temperature, 1));
     }
-
+    
     float humidity = dht.getHumidity();
     if (!isnan(humidity)) {
       send(msgHum.set(humidity, 1));
