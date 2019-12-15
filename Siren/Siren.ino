@@ -9,7 +9,7 @@
 #define MY_RF24_IRQ_PIN (3)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
+#define MY_RF24_PA_LEVEL (RF24_PA_LOW)
 
 // Enable repeater functionality
 #define MY_REPEATER_FEATURE
@@ -69,6 +69,7 @@ MyMessage msg(0, V_CUSTOM);
 bool _isOnBattery = false;
 RGBLed led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 Parser parser = Parser(' ');
+unsigned long _heartbeatTime = 0;
 
 void before()
 {
@@ -137,6 +138,11 @@ void loop() {
   manageBuzzer();
   manageSiren();
   managePowerProbe();
+
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
+  }
 }
 
 /*
@@ -205,8 +211,8 @@ inline void manageSiren() {
       stopSirenSound();
       _sirenTime = millis();
       _sirenState++;
-    } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
-      DEBUG_PRINT(F("Siren stopped after 60s!"));
+    } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 180000) {
+      DEBUG_PRINT(F("Siren stopped after 3 min!"));
       stopSiren();
       send(msg.set(F("siren stopped")));
     }
