@@ -21,6 +21,7 @@ MyMessage msg(0, V_CUSTOM);
 unsigned long _relayDuration = 0;
 unsigned long _relayStartTime = 0;
 bool _relayIsOn = false;
+unsigned long _heartbeatTime = 0;
 
 void before()
 {
@@ -54,6 +55,11 @@ void receive(const MyMessage &message)
 
 void loop() {
   manageRelay();
+
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
+  }
 }
 
 void startRelay(unsigned long duration) {
