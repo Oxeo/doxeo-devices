@@ -23,20 +23,22 @@ int _buzzerDuration = 0;
 unsigned long _buzzerStartTime = 0;
 bool _buzzerIsOn = false;
 
+unsigned long _heartbeatTime = 0;
+
 void before()
 {
   // init PIN
   pinMode(RELAY1, OUTPUT);
   pinMode(BUZZER, OUTPUT);
-  
+
   // Set relay to last known state (using eeprom storage)
   digitalWrite(RELAY1, loadState(0));
-  
+
   stopBuzzer();
 }
 
 void setup() {
-    startBuzzer(50);
+  startBuzzer(50);
 }
 
 void presentation() {
@@ -51,23 +53,28 @@ void receive(const MyMessage &message)
 {
   if (message.type == V_STATUS && message.sensor == 0) {
     // Change relay state
-	digitalWrite(RELAY1, message.getBool());
-    
-	// Store state in eeprom
+    digitalWrite(RELAY1, message.getBool());
+
+    // Store state in eeprom
     if (loadState(message.sensor) != message.getBool()) {
-        saveState(message.sensor, message.getBool());
+      saveState(message.sensor, message.getBool());
     }
-    
+
     if (message.getBool()) {
-        startBuzzer(1000);
+      startBuzzer(1000);
     } else {
-        startBuzzer(100);
+      startBuzzer(100);
     }
   }
 }
 
 void loop() {
   manageBuzzer();
+
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
+  }
 }
 
 void startBuzzer(int duration) {
@@ -85,5 +92,5 @@ void stopBuzzer() {
 inline void manageBuzzer() {
   if (_buzzerIsOn && millis() - _buzzerStartTime >= _buzzerDuration) {
     stopBuzzer();
-  }      
+  }
 }

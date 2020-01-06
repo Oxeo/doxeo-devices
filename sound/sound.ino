@@ -45,6 +45,8 @@ int _oldVolume = 0;
 boolean _ledOn = false;
 unsigned long _previousLedChange = 0;
 
+unsigned long _heartbeatTime = 0;
+
 MyMessage msg(0, V_CUSTOM);
 Parser parser = Parser('-');
 
@@ -88,7 +90,7 @@ void receive(const MyMessage &myMsg)
       send(msg.set(F("play stopped")));
       changeState(WAITING);
     } else if (parser.isEqual(0, "ping")) {
-      send(msg.set(F("pong")));
+      // nothing to do
     } else if (parser.isEqual(0, "relay")) {
       if (parser.isEqual(1, "on")) {
         digitalWrite(RELAY2, HIGH);
@@ -149,8 +151,11 @@ void loop() {
     }
 
     wait(1000);
-  } else {
-    wait(60000);
+  }
+
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
   }
 }
 

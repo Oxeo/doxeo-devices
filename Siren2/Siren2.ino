@@ -88,6 +88,7 @@ bool redLedOn = false;
 bool _isOnBattery = false;
 Parser parser = Parser(' ');
 Timer timer;
+unsigned long _heartbeatTime = 0;
 
 void before()
 {
@@ -174,6 +175,12 @@ void loop() {
   managePirSensor();
   manageRfReceptor();
   manageButtons();
+
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
+  }
+  
   timer.update();
 }
 
