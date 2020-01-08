@@ -42,12 +42,12 @@ void before()
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(BLUE_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
-  analogWrite(RED_LED_PIN, 200);
+  digitalWrite(RED_LED_PIN, HIGH);
 }
 
 void presentation()
 {
-  sendSketchInfo("Hot Tea Alert", "1.0");
+  sendSketchInfo("Hot Tea Alert", "1.1");
   present(STATE_ID, S_INFO, "State status");
   present(TEMP_ID, S_TEMP, "Tea temperature");
 }
@@ -71,7 +71,7 @@ void loop()
 
   if (_state == SLEEPING) {
     if (temperature < 40) {
-      if (sleep(0, FALLING, 30000) == 0) {
+      if (sleep(0, FALLING, 60000) == 0) {
         delay(3000);
         if (digitalRead(SWITCH_PIN) == LOW) {
           if (_mode == 1) {
@@ -122,7 +122,7 @@ void loop()
       }
     }
 
-    delay(1000);
+    sleep(1000);
     if (digitalRead(SWITCH_PIN) == LOW) {
       saveTargetTemperature(temperature);
       blinkRedLed();
@@ -158,7 +158,7 @@ void changeState(uint8_t state) {
       _oldTemperature = -100;
       break;
     case HOT:
-      analogWrite(RED_LED_PIN, 50);
+      digitalWrite(RED_LED_PIN, HIGH);
       digitalWrite(GREEN_LED_PIN, LOW);
       digitalWrite(BLUE_LED_PIN, LOW);
       break;
@@ -175,7 +175,7 @@ void changeState(uint8_t state) {
     case COLD:
       digitalWrite(RED_LED_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, LOW);
-      analogWrite(BLUE_LED_PIN, 50);
+      digitalWrite(BLUE_LED_PIN, HIGH);
       _coldCpt = 0;
       break;
   }
@@ -244,13 +244,7 @@ void changeMode(int mode) {
 float getTemperature() {
   pinMode(TEMP_POWER, OUTPUT);
   digitalWrite(TEMP_POWER, HIGH);
-
-  if (_state == SLEEPING) {
-    sleep(50);
-  } else {
-    wait(100);  
-  }
-  
+  sleep(50);
   Wire.begin(); // Init I2C Bus
   
   // Données brute de température
@@ -267,16 +261,20 @@ float getTemperature() {
   data = Wire.read();
   data |= (Wire.read() & 0x7F) << 8;  // Le MSB est ignoré (bit de contrôle d'erreur)
   Wire.read(); // PEC
-  Wire.endTransmission();
+  Wire.endTransmission(true);
+
+  // set power pin to input before sleeping, saves power
+  digitalWrite(A4, LOW);
+  pinMode(A4, INPUT);
+  digitalWrite(A5, LOW);
+  pinMode(A5, INPUT);
+  digitalWrite(TEMP_POWER, LOW);
+  pinMode(TEMP_POWER, INPUT);
 
   // Calcul de la température
   const float tempFactor = 0.02; // 0.02°C par LSB -> résolution du MLX90614
   float tempData = (tempFactor * data) - 0.01;
   float celsius = tempData - 273.15; // Conversion des degrés Kelvin en degrés Celsius
-
-  // set power pin to input before sleeping, saves power
-  digitalWrite(TEMP_POWER, LOW);
-  pinMode(TEMP_POWER, INPUT);
 
   return celsius;
 }
@@ -300,13 +298,13 @@ void reportBatteryLevel() {
 }
 
 void runningLight() {
-  analogWrite(RED_LED_PIN, 200);
+  digitalWrite(RED_LED_PIN, HIGH);
   wait(500);
   digitalWrite(RED_LED_PIN, LOW);
   digitalWrite(GREEN_LED_PIN, HIGH);
   wait(500);
   digitalWrite(GREEN_LED_PIN, LOW);
-  analogWrite(BLUE_LED_PIN, 200);
+  digitalWrite(BLUE_LED_PIN, HIGH);
   wait(500);
   digitalWrite(BLUE_LED_PIN, LOW);
 }
@@ -318,7 +316,7 @@ void blinkRedLed() {
 
   for (char i = 0; i < 40; i++) {
     if (i % 2 == 0) {
-      analogWrite(RED_LED_PIN, 200);
+      digitalWrite(RED_LED_PIN, HIGH);
     } else {
       digitalWrite(RED_LED_PIN, LOW);
     }
@@ -336,7 +334,7 @@ void blinkBlueLed(char numberOfBlink) {
 
   for (char i = 0; i < numberOfBlink * 2; i++) {
     if (i % 2 == 0) {
-      analogWrite(BLUE_LED_PIN, 200);
+      digitalWrite(BLUE_LED_PIN, HIGH);
     } else {
       digitalWrite(BLUE_LED_PIN, LOW);
     }
