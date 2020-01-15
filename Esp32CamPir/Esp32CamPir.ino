@@ -1,5 +1,6 @@
 #include "esp_http_client.h"
 #include "esp_camera.h"
+#include "driver/rtc_io.h"
 #include <WiFi.h>
 #include "Arduino.h"
 
@@ -33,8 +34,14 @@ long last_capture_millis = 0;
 void setup()
 {
   Serial.begin(115200);
+  
+  // power on led
+  pinMode(4, INPUT);
+  digitalWrite(4, LOW);
+  rtc_gpio_hold_dis(GPIO_NUM_4);
 
-  if (init_wifi()) { // Connected to WiFi
+  // Connected to WiFi
+  if (init_wifi()) {
     internet_connected = true;
     Serial.println("Internet connected");
   }
@@ -77,6 +84,20 @@ void setup()
     Serial.printf("Camera init failed with error 0x%x", err);
     return;
   }
+
+  take_send_photo();
+
+  // Turns off the ESP32-CAM white on-board LED (flash) connected to GPIO 4
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
+  rtc_gpio_hold_en(GPIO_NUM_4);
+
+  goToSleep();  
+}
+
+void goToSleep() {
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_13,0); //1 = High, 0 = Low
+  esp_deep_sleep_start();
 }
 
 bool init_wifi()
@@ -165,15 +186,7 @@ static esp_err_t take_send_photo()
   esp_camera_fb_return(fb);
 }
 
-
-
 void loop()
 {
-  // TODO check Wifi and reconnect if needed
   
-  current_millis = millis();
-  if (current_millis - last_capture_millis > capture_interval) { // Take another picture
-    last_capture_millis = millis();
-    take_send_photo();
-  }
 }
