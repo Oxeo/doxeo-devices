@@ -40,12 +40,6 @@ void setup()
   digitalWrite(4, LOW);
   rtc_gpio_hold_dis(GPIO_NUM_4);
 
-  // Connected to WiFi
-  if (init_wifi()) {
-    internet_connected = true;
-    Serial.println("Internet connected");
-  }
-
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -82,10 +76,26 @@ void setup()
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
-    return;
+    goToSleep();
   }
 
-  take_send_photo();
+  // take picture
+  Serial.println("Taking picture...");
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    goToSleep();
+  }
+
+  // Connected to WiFi
+  if (init_wifi()) {
+    internet_connected = true;
+    Serial.println("Internet connected");
+    sendPhoto(fb);
+  }
+  
+  // return the frame buffer back to be reused
+  esp_camera_fb_return(fb);
 
   // Turns off the ESP32-CAM white on-board LED (flash) connected to GPIO 4
   pinMode(4, OUTPUT);
@@ -150,29 +160,18 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
   return ESP_OK;
 }
 
-static esp_err_t take_send_photo()
+static esp_err_t sendPhoto(camera_fb_t *fb)
 {
-  Serial.println("Taking picture...");
-  camera_fb_t * fb = NULL;
-  esp_err_t res = ESP_OK;
-
-  fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Camera capture failed");
-    return ESP_FAIL;
-  }
-
-  esp_http_client_handle_t http_client;
+  Serial.println("Sending picture...");
   
+  esp_http_client_handle_t http_client;
   esp_http_client_config_t config_client = {0};
   config_client.url = post_url;
   config_client.event_handler = _http_event_handler;
   config_client.method = HTTP_METHOD_POST;
 
   http_client = esp_http_client_init(&config_client);
-
   esp_http_client_set_post_field(http_client, (const char *)fb->buf, fb->len);
-
   esp_http_client_set_header(http_client, "Content-Type", "image/jpg");
 
   esp_err_t err = esp_http_client_perform(http_client);
@@ -182,8 +181,6 @@ static esp_err_t take_send_photo()
   }
 
   esp_http_client_cleanup(http_client);
-
-  esp_camera_fb_return(fb);
 }
 
 void loop()
