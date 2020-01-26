@@ -17,15 +17,16 @@
 #define EEPROM_WATER_STATUS 0
 #define EEPROM_MODE 1
 #define EEPROM_DURATION 2
-#define EEPROM_SPACING 3
+#define EEPROM_SPACING_HIGH_BYTE 4
+#define EEPROM_SPACING_LOW_BYTE 5
 
 MyMessage msg(SENSOR_ID, V_CUSTOM);
 Parser parser = Parser('-');
 bool _risingEvent;
 bool _waterTankEmpty;
 uint8_t _mode;
-uint8_t _duration;
-uint8_t _spacing;
+unsigned long _duration;
+unsigned long _spacing;
 
 void before()
 {
@@ -45,7 +46,7 @@ void setup()
 {
   _mode = readEeprom(EEPROM_MODE, 1);
   _duration = readEeprom(EEPROM_DURATION, 2);
-  _spacing = readEeprom(EEPROM_SPACING, 0);
+  _spacing = readEeprom(EEPROM_SPACING_HIGH_BYTE, EEPROM_SPACING_LOW_BYTE, 0);
   _waterTankEmpty = loadState(EEPROM_WATER_STATUS);
 
 #ifdef MY_DEBUG
@@ -67,9 +68,6 @@ void setup()
   }
 
   send(msg.set(F("cat repellent started")));
-
-  sleep(digitalPinToInterrupt(PIR_PIN), RISING, 0);
-  _risingEvent = true;
 }
 
 void presentation()
@@ -98,6 +96,11 @@ void receive(const MyMessage &myMsg)
       Serial.println ("Spacing: " + String(_spacing));
 #endif
 
+      // stop pump if mode = 0
+      if (_mode == 0) {
+        digitalWrite(PUMP_PIN, LOW);
+      }
+
       // Store mode in eeprom
       if (loadState(EEPROM_MODE) != _mode) {
         saveState(EEPROM_MODE, _mode);
@@ -111,8 +114,10 @@ void receive(const MyMessage &myMsg)
       }
 
       // Store spacing in eeprom
-      if (loadState(EEPROM_SPACING) != _spacing) {
-        saveState(EEPROM_SPACING, _spacing);
+      if (readEeprom(EEPROM_SPACING_HIGH_BYTE, EEPROM_SPACING_LOW_BYTE, 0) != _spacing) {
+        saveState(EEPROM_SPACING_HIGH_BYTE, highByte(_spacing));
+        saveState(EEPROM_SPACING_LOW_BYTE, lowByte(_spacing));
+        
         send(msg.set(F("spacing updated")));
       }
     }
@@ -172,7 +177,16 @@ void loop()
 
       _risingEvent = false;
     } else {
+      pinMode(PUMP_PIN, INPUT);
+      pinMode(GREEN_LED_PIN, INPUT);
+      pinMode(RED_LED_PIN, INPUT);
+      
       sleep(digitalPinToInterrupt(PIR_PIN), RISING, 0);
+
+      pinMode(PUMP_PIN, OUTPUT);
+      pinMode(GREEN_LED_PIN, OUTPUT);
+      pinMode(RED_LED_PIN, OUTPUT);
+  
       _risingEvent = true;
     }
   }
@@ -193,5 +207,13 @@ uint8_t readEeprom(uint8_t pos, uint8_t defaultValue) {
     return defaultValue;
   } else {
     return value;
+  }
+}
+
+unsigned int readEeprom(uint8_t posHighByte, uint8_t posLowByte, unsigned int defaultValue) {
+  if (loadState(posHighByte) == 0xFF && loadState(posLowByte) == 0xFF) {
+    return defaultValue;
+  } else {
+    return word(loadState(posHighByte), loadState(posLowByte));
   }
 }
