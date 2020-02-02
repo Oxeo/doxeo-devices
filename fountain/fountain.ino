@@ -15,7 +15,7 @@
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 
 // Enable repeater functionality
-#define MY_REPEATER_FEATURE
+//#define MY_REPEATER_FEATURE
 
 #include <MySensors.h>
 #include <SPI.h>
@@ -41,6 +41,7 @@
 unsigned long pump1Timer = 0;
 unsigned long pump2Timer = 0;
 unsigned long lightTimer = 0;
+unsigned long _heartbeatTime = 0;
 
 // Temperature sensor
 OneWire oneWire(PIN_TEMPERATURE);
@@ -88,7 +89,7 @@ void setup() {
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Fountain management", "1.0");
+  sendSketchInfo("Fountain management", "1.1");
 
   // Present sensor to controller
   present(TEMPERATURE_ID, S_TEMP, "temperature");
@@ -170,11 +171,11 @@ void loop() {
         send(msgPump2.set("no water"));
       }
     }
+  }
 
-    wait(1000);
-
-  } else {
-    wait(60000);
+  if (millis() - _heartbeatTime >= 60000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
   }
 }
 
