@@ -3,8 +3,8 @@ All doxeo-device to connect to doxeo
 
 ## Set Arduino Pro Mini to 1Mhz
 
-* Copy the file ATmegaBOOT_168_atmega328_pro_1MHz.hex into AppData\Local\Arduino15\packages\arduino\hardware\avr\1.6.23\bootloaders\atmega
-* Copy the lines below into : AppData\Local\Arduino15\packages\arduino\hardware\avr\1.6.23\boards.txt
+* Copy the file ATmegaBOOT_168_atmega328_pro_1MHz.hex into "C:\Program Files (x86)\Arduino\hardware\arduino\avr\bootloaders\atmega"
+* Copy the lines below into : "C:\Program Files (x86)\Arduino\hardware\arduino\avr\boards.txt"
 ```
 ## Arduino Pro or Pro Mini (1.8V, 1 MHz) w/ ATmega328
 ## --------------------------------------------------
