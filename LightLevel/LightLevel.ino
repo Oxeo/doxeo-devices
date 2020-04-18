@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-#define MY_DEBUG
+//#define MY_DEBUG
 
 // Enable REPORT_BATTERY_LEVEL to measure battery level and send changes to gateway
 #define REPORT_BATTERY_LEVEL
@@ -28,6 +28,8 @@ const float _vccCorrection = 1.0;      // Measured Vcc by multimeter divided by 
 static Vcc _vcc(_vccCorrection);
 #endif
 
+int lastPhotocell = -100;
+
 MyMessage msgLight(0, V_LIGHT_LEVEL);
 
 void setup() {
@@ -35,7 +37,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Light Level", "1.0");
+  sendSketchInfo("Light Level", "1.1");
 
   // Present sensor to controller
   present(0, S_LIGHT_LEVEL);
@@ -45,10 +47,16 @@ void loop() {
   int photocell = readPhotocell();
   DEBUG_PRINT(F("Light: "));
   DEBUG_PRINT(photocell);
-  send(msgLight.set(photocell));
+
+  int diff = photocell - lastPhotocell;
+  if (abs(diff) > 5) { 
+    send(msgLight.set(photocell));
+    lastPhotocell = photocell;
+  }
 
   reportBatteryLevel();
-  sleep(600000);
+  sendHeartbeat();
+  sleep(60000);
 }
 
 int readPhotocell() {
@@ -56,9 +64,8 @@ int readPhotocell() {
   digitalWrite(PIN_ALIM_PHOTOCELL, HIGH);
   sleep(30);
 
-  int value = analogRead(PIN_PHOTOCELL) ;/// 10.23;
-
-  //value = map(value, 665, 1023, 0, 100);
+  int value = analogRead(PIN_PHOTOCELL);
+  value = map(value, 0, 1023, 0, 100);
 
   digitalWrite(PIN_ALIM_PHOTOCELL, LOW);
   pinMode(PIN_ALIM_PHOTOCELL, INPUT);
