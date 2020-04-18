@@ -1,7 +1,7 @@
 #define MY_DEBUG
 //#define DHT_SENSOR
 #define PIR
-#define RF
+//#define RF
 
 #define MY_RADIO_RF24
 #define MY_RX_MESSAGE_BUFFER_FEATURE
