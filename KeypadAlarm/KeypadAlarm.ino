@@ -105,6 +105,10 @@ void loop() {
     _keyboardInterruptTime = millis();
 
     if (_state == NOMINAL) {
+      if (_keyboardPosition == 1 && key == '#') {
+        send(msg.set(F("#")));
+      }
+      
       if (key == _password[_keyboardPosition]) {
         _keyboardPosition++;
       } else if (key == _password[0]) {

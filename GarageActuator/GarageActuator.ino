@@ -18,8 +18,8 @@
 #define SERVO2_PIN 5
 #define SERVO1_UNLOCK_POS 0
 #define SERVO1_LOCK_POS 180
-#define SERVO2_UNLOCK_POS 0
-#define SERVO2_LOCK_POS 180
+#define SERVO2_UNLOCK_POS 180
+#define SERVO2_LOCK_POS 0
 
 MyMessage msg(1, V_CUSTOM);
 
