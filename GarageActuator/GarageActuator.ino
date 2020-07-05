@@ -148,13 +148,19 @@ inline void manageServo() {
 
 void loop() {
   if (hc06.available() > 0) {
-    char incomingByte = hc06.read();
+    char incomingChar = hc06.read();
     Serial.println("HC-06 message received");
 
-    if (incomingByte == 'z' || incomingByte == 'Z') {
+    if (incomingChar == '0') {
       _servo1_target = SERVO1_UNLOCK_POS;
       _servo2_target = SERVO2_UNLOCK_POS;
       _action = true;
+      hc06.write("Unlock");
+    } else if (incomingChar == '1') {
+      _servo1_target = SERVO1_LOCK_POS;
+      _servo2_target = SERVO2_LOCK_POS;
+      _action = true;
+      hc06.write("Lock");
     }
   }
   
