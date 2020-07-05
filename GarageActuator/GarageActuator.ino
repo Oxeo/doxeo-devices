@@ -13,6 +13,7 @@
 
 #include <MySensors.h>
 #include <Servo.h>
+#include <SoftwareSerial.h>
 
 #define SERVO1_PIN 3
 #define SERVO2_PIN 5
@@ -32,25 +33,18 @@ byte _servo1_target;
 byte _servo2_position;
 byte _servo2_target;
 
+SoftwareSerial hc06(7, 8); // RX, TX
+
 void before()
 {
   _servo1_position = loadState(0); // Set position to last known state (using eeprom storage)
-  _servo1.attach(SERVO1_PIN);
-  _servo1.write(_servo1_position);
-  delay(100);
-  _servo1.detach();
-
   _servo2_position = loadState(1); // Set position to last known state (using eeprom storage)
-  _servo2.attach(SERVO1_PIN);
-  _servo2.write(_servo2_position);
-  delay(100);
-  _servo2.detach();
-
   _action = false;
 }
 
 void setup() {
   randomSeed(analogRead(0)); // A0
+  hc06.begin(9600);
 }
 
 void presentation() {
@@ -153,6 +147,17 @@ inline void manageServo() {
 }
 
 void loop() {
+  if (hc06.available() > 0) {
+    char incomingByte = hc06.read();
+    Serial.println("HC-06 message received");
+
+    if (incomingByte == 'z' || incomingByte == 'Z') {
+      _servo1_target = SERVO1_UNLOCK_POS;
+      _servo2_target = SERVO2_UNLOCK_POS;
+      _action = true;
+    }
+  }
+  
   manageServo();
   manageHeartbeat();
 }
