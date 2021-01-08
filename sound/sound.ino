@@ -62,6 +62,8 @@ void before()
 }
 
 void setup() {
+  randomSeed(analogRead(0)); // A0
+  
   // init DFPlayer
   initDfPlayer();
 
@@ -153,10 +155,7 @@ void loop() {
     wait(1000);
   }
 
-  if (millis() - _heartbeatTime >= 60000) {
-    sendHeartbeat();
-    _heartbeatTime = millis();
-  }
+  manageHeartbeat();
 }
 
 void changeState(uint8_t state) {
@@ -247,5 +246,30 @@ byte dfPlayerDetail(uint8_t type, int value) {
       }
     default:
       return 0;
+  }
+}
+
+inline void manageHeartbeat() {
+  static unsigned long _heartbeatLastSend = 0;
+  static unsigned long _heartbeatWait = random(1000, 60000);
+  static unsigned long _heartbeatRetryNb = 0;
+
+  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
+    bool success = sendHeartbeat();
+
+    if (success) {
+      _heartbeatWait = 60000;
+      _heartbeatRetryNb = 0;
+    } else {
+      if (_heartbeatRetryNb < 10) {
+        _heartbeatWait = random(100, 3000);
+        _heartbeatRetryNb++;
+      } else {
+        _heartbeatWait = random(45000, 60000);
+        _heartbeatRetryNb = 0;
+      }
+    }
+    
+    _heartbeatLastSend = millis();
   }
 }

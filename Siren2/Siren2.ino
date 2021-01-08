@@ -104,6 +104,7 @@ void before()
 }
 
 void setup() {
+  randomSeed(analogRead(3)); // A3
   setRedLedOn(false);
 #if defined(DHT_SENSOR)
   dht.setup(DHT_PIN);
@@ -176,11 +177,7 @@ void loop() {
   manageRfReceptor();
   manageButtons();
 
-  if (millis() - _heartbeatTime >= 60000) {
-    sendHeartbeat();
-    _heartbeatTime = millis();
-  }
-  
+  manageHeartbeat();
   timer.update();
 }
 
@@ -350,5 +347,30 @@ void setRedLedOn(bool on) {
     digitalWrite(RED_LED_PIN, HIGH);
   } else {
     digitalWrite(RED_LED_PIN, LOW);
+  }
+}
+
+inline void manageHeartbeat() {
+  static unsigned long _heartbeatLastSend = 0;
+  static unsigned long _heartbeatWait = random(1000, 60000);
+  static unsigned long _heartbeatRetryNb = 0;
+
+  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
+    bool success = sendHeartbeat();
+
+    if (success) {
+      _heartbeatWait = 60000;
+      _heartbeatRetryNb = 0;
+    } else {
+      if (_heartbeatRetryNb < 10) {
+        _heartbeatWait = random(100, 3000);
+        _heartbeatRetryNb++;
+      } else {
+        _heartbeatWait = random(45000, 60000);
+        _heartbeatRetryNb = 0;
+      }
+    }
+    
+    _heartbeatLastSend = millis();
   }
 }
