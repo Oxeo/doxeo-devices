@@ -83,6 +83,7 @@ void before()
 }
 
 void setup() {
+  randomSeed(analogRead(0)); // A0
   //attachInterrupt(digitalPinToInterrupt(_rowPins[_rows-1]), keyboardInterrupt, FALLING);
   //initPasswordValue();
   led.flash(RGBLed::GREEN, 500);
@@ -90,7 +91,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Siren", "2.0");
+  sendSketchInfo("Siren", "2.1");
   present(0, S_CUSTOM);
 }
 
@@ -102,7 +103,7 @@ void receive(const MyMessage &myMsg)
     if (parser.get(0) == NULL) {
       send(msg.set(F("cmd missing! send help")));
     } else if (parser.isEqual(0, "ping")) {
-      send(msg.set(F("pong")));
+      // nothing to do
     } else if (parser.isEqual(0, "status")) {
       sendNrfStatus();
     } else if (parser.isEqual(0, "stop")) {
@@ -138,11 +139,7 @@ void loop() {
   manageBuzzer();
   manageSiren();
   managePowerProbe();
-
-  if (millis() - _heartbeatTime >= 60000) {
-    sendHeartbeat();
-    _heartbeatTime = millis();
-  }
+  manageHeartbeat();
 }
 
 /*
@@ -285,6 +282,31 @@ void stopBuzzer() {
 inline void manageBuzzer() {
   if (_buzzerIsOn && millis() - _buzzerStartTime >= _buzzerDuration) {
     stopBuzzer();
+  }
+}
+
+inline void manageHeartbeat() {
+  static unsigned long _heartbeatLastSend = 0;
+  static unsigned long _heartbeatWait = random(1000, 60000);
+  static unsigned long _heartbeatRetryNb = 0;
+
+  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
+    bool success = sendHeartbeat();
+
+    if (success) {
+      _heartbeatWait = 60000;
+      _heartbeatRetryNb = 0;
+    } else {
+      if (_heartbeatRetryNb < 10) {
+        _heartbeatWait = random(100, 3000);
+        _heartbeatRetryNb++;
+      } else {
+        _heartbeatWait = random(45000, 60000);
+        _heartbeatRetryNb = 0;
+      }
+    }
+    
+    _heartbeatLastSend = millis();
   }
 }
 
