@@ -36,7 +36,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("ActuatorWithDelay", "1.0");
+  sendSketchInfo("ActuatorWithDelay", "1.1");
 
   // Present sensor to controller
   present(0, S_CUSTOM);
@@ -55,11 +55,7 @@ void receive(const MyMessage &message)
 
 void loop() {
   manageRelay();
-
-  if (millis() - _heartbeatTime >= 60000) {
-    sendHeartbeat();
-    _heartbeatTime = millis();
-  }
+  manageHeartbeat();
 }
 
 void startRelay(unsigned long duration) {
@@ -80,4 +76,29 @@ inline void manageRelay() {
   if (_relayIsOn && millis() - _relayStartTime >= _relayDuration) {
     stopRelay();
   }      
+}
+
+inline void manageHeartbeat() {
+  static unsigned long _heartbeatLastSend = 0;
+  static unsigned long _heartbeatWait = random(1000, 60000);
+  static unsigned long _heartbeatRetryNb = 0;
+
+  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
+    bool success = sendHeartbeat();
+
+    if (success) {
+      _heartbeatWait = 60000;
+      _heartbeatRetryNb = 0;
+    } else {
+      if (_heartbeatRetryNb < 10) {
+        _heartbeatWait = random(100, 3000);
+        _heartbeatRetryNb++;
+      } else {
+        _heartbeatWait = random(45000, 60000);
+        _heartbeatRetryNb = 0;
+      }
+    }
+    
+    _heartbeatLastSend = millis();
+  }
 }
