@@ -4,18 +4,16 @@
 // Enable and select radio type attached
 #define MY_RADIO_RF24
 
-// Enable debug prints related to the RF24 driver.
-//#define MY_DEBUG_VERBOSE_RF24
-
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
 
 // RF24 PA level
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
 
 // Enable repeater functionality
-//#define MY_REPEATER_FEATURE
+#define MY_REPEATER_FEATURE
+#define MY_REPEATER_FEATURE_WITHOUT_UPS
 
 #include <MySensors.h>
 #include <SPI.h>
@@ -89,7 +87,7 @@ void setup() {
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Fountain management", "1.1");
+  sendSketchInfo("Fountain", "1.2");
 
   // Present sensor to controller
   present(TEMPERATURE_ID, S_TEMP, "temperature");
@@ -173,10 +171,7 @@ void loop() {
     }
   }
 
-  if (millis() - _heartbeatTime >= 60000) {
-    sendHeartbeat();
-    _heartbeatTime = millis();
-  }
+  manageHeartbeat();
 }
 
 void startPump1(bool start) {
@@ -311,4 +306,29 @@ String parseMsg(String data, char separator, int index)
 void wakeUp()
 {
   // do nothing
+}
+
+inline void manageHeartbeat() {
+  static unsigned long _heartbeatLastSend = 0;
+  static unsigned long _heartbeatWait = random(1000, 60000);
+  static unsigned long _heartbeatRetryNb = 0;
+
+  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
+    bool success = sendHeartbeat();
+
+    if (success) {
+      _heartbeatWait = 60000;
+      _heartbeatRetryNb = 0;
+    } else {
+      if (_heartbeatRetryNb < 10) {
+        _heartbeatWait = random(100, 3000);
+        _heartbeatRetryNb++;
+      } else {
+        _heartbeatWait = random(45000, 60000);
+        _heartbeatRetryNb = 0;
+      }
+    }
+    
+    _heartbeatLastSend = millis();
+  }
 }

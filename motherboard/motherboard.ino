@@ -4,8 +4,9 @@
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
 #include "Nrf.h"
-
 #include <DoxeoConfig.h>
+
+//#define ENABLE_NRF
 
 #define PIN_BUZZER 5
 #define PIN_RF_RECEIVER 3
@@ -17,7 +18,9 @@
 #define DFPLAYER_RX_PIN 6
 #define DFPLAYER_TX_PIN 7
 
+#if defined(ENABLE_NRF)
 Nrf nrf(PIN_NRF_INTERRUPT);
+#endif
 
 // Timer management
 Timer timer;
@@ -48,7 +51,9 @@ void setup() {
   digitalWrite(PIN_SWITCH1, LOW);
   digitalWrite(PIN_SWITCH2, LOW);
 
+#if defined(ENABLE_NRF)
   nrf.init();
+#endif
 
   // init RF 433MhZ
   rcSwitch.enableReceive(digitalPinToInterrupt(PIN_RF_RECEIVER));
@@ -63,21 +68,23 @@ void setup() {
 
   // init serial
   Serial.begin(9600);
-  
+
   Serial.println("Doxeoboard started");
 }
 
 void loop() {
-  
+
   // Command reception
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     String commandType = Nrf::parseCommand(command, ';', 0);
     String commandName = Nrf::parseCommand(command, ';', 1);
     String commandValue = Nrf::parseCommand(command, ';', 2);
-    
+
     if (commandType == "nrf" || commandType == "nrf2") {
+#if defined(ENABLE_NRF)
       nrf.sendMessage(command);
+#endif
     } else if (commandType == "dio" && commandName != "") {
       dio.send(commandName.toInt());
       Serial.println(command);
@@ -98,7 +105,7 @@ void loop() {
       } else {
         dfPlayer.stop();
       }
-      
+
       Serial.println(command);
     } else if (commandType == "switch") {
       if (commandValue == "on") {
@@ -114,38 +121,48 @@ void loop() {
     }
   }
 
+#if defined(ENABLE_NRF)
+  if (!nrf.emergencySending() {
+#endif
+
   // DIO reception
   unsigned long sender = 0;
-  if (!nrf.emergencySending() && (sender = dio.read()) != 0) {  // take 50ms
-    if (sender != oldSenderDio) {
-      send("dio", String(sender), "event");
-      oldSenderDio = sender;
-      if (timerIdDioReceptor != -1) {
-        timer.stop(timerIdDioReceptor);
+  if ((sender = dio.read()) != 0) {  // take 50ms
+      if (sender != oldSenderDio) {
+        send("dio", String(sender), "event");
+        oldSenderDio = sender;
+        if (timerIdDioReceptor != -1) {
+          timer.stop(timerIdDioReceptor);
+        }
+        timerIdDioReceptor = timer.after(1000, resetTemponDio);
       }
-      timerIdDioReceptor = timer.after(1000, resetTemponDio);
     }
-  }
 
-  // RF reception
-  if (!nrf.emergencySending() && rcSwitch.available()) {
-    unsigned long sendValue = rcSwitch.getReceivedValue();
-    if (sendValue != 0 && sendValue != oldSenderRf) {
-      send("rf", String(sendValue), "event");
-      oldSenderRf = sendValue;
-      if (timerIdRfReceptor != -1) {
-        timer.stop(timerIdRfReceptor);
+    // RF reception
+    if (rcSwitch.available()) {
+      unsigned long sendValue = rcSwitch.getReceivedValue();
+      if (sendValue != 0 && sendValue != oldSenderRf) {
+        send("rf", String(sendValue), "event");
+        oldSenderRf = sendValue;
+        if (timerIdRfReceptor != -1) {
+          timer.stop(timerIdRfReceptor);
+        }
+        timerIdRfReceptor = timer.after(1000, resetTemponRf);
       }
-      timerIdRfReceptor = timer.after(1000, resetTemponRf);
+      rcSwitch.resetAvailable();
     }
-    rcSwitch.resetAvailable();
+
+#if defined(ENABLE_NRF)
   }
-  
+#endif
+
+#if defined(ENABLE_NRF)
   nrf.update();
+#endif
 
-   // print DFPlayer status
+  // print DFPlayer status
   if (millis() - dfPlayerTimer >= 1000 && dfPlayer.available()) {
-    dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
+  dfPlayerDetail(dfPlayer.readType(), dfPlayer.read());
     dfPlayerTimer = millis();
   }
 
@@ -166,22 +183,22 @@ void resetTemponRf() {
 void enableSwitch(char id, boolean on) {
   if (id == 0) {
     if (on) {
-        digitalWrite(PIN_SWITCH0, HIGH);
-      } else {
-        digitalWrite(PIN_SWITCH0, LOW);
-      }
+      digitalWrite(PIN_SWITCH0, HIGH);
+    } else {
+      digitalWrite(PIN_SWITCH0, LOW);
+    }
   } else if (id == 1) {
     if (on) {
-        digitalWrite(PIN_SWITCH1, HIGH);
-      } else {
-        digitalWrite(PIN_SWITCH1, LOW);
-      }
+      digitalWrite(PIN_SWITCH1, HIGH);
+    } else {
+      digitalWrite(PIN_SWITCH1, LOW);
+    }
   } else if (id == 2) {
     if (on) {
-        digitalWrite(PIN_SWITCH2, HIGH);
-      } else {
-        digitalWrite(PIN_SWITCH2, LOW);
-      }
+      digitalWrite(PIN_SWITCH2, HIGH);
+    } else {
+      digitalWrite(PIN_SWITCH2, LOW);
+    }
   }
 }
 

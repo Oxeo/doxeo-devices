@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 // Enable REPORT_BATTERY_LEVEL to measure battery level and send changes to gateway
 #define REPORT_BATTERY_LEVEL
@@ -37,7 +37,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Light Level", "1.1");
+  sendSketchInfo("Light Level", "1.2");
 
   // Present sensor to controller
   present(0, S_LIGHT_LEVEL);
