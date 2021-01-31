@@ -26,8 +26,8 @@ static Vcc _vcc(_vccCorrection);
 
 #define SERVO_POWER_PIN A0
 #define SERVO_PIN 3
-#define SERVO_UNLOCK_POS 85
-#define SERVO_LOCK_POS 180
+#define SERVO_UNLOCK_POS 52
+#define SERVO_LOCK_POS 147
 
 enum state_enum {SLEEPING, RUNNING, GOING_TO_SLEEP};
 uint8_t _state;
@@ -37,7 +37,7 @@ byte _servoPosition;
 byte _servoTarget;
 bool _servoMoving;
 unsigned long _servoTimeChange = 0;
-unsigned long _servoSpeed = 5;
+unsigned long _servoSpeed = 10;
 
 Parser parser = Parser(' ');
 MyMessage msg(0, V_CUSTOM);
