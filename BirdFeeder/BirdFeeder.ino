@@ -5,6 +5,7 @@
 #define REPORT_BATTERY_LEVEL
 
 #define MY_RADIO_RF24
+#define MY_PARENT_NODE_ID 4
 
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
@@ -51,6 +52,7 @@ void before() {
 
 void setup() {
   _state = SLEEPING;
+  pinMode(SERVO_POWER_PIN, OUTPUT);
 }
 
 void presentation() {
@@ -121,14 +123,14 @@ void closeGate() {
 }
 
 void powerOnServo() {
-  pinMode(SERVO_POWER_PIN, OUTPUT);
+  //pinMode(SERVO_POWER_PIN, OUTPUT);
   digitalWrite(SERVO_POWER_PIN, HIGH);
   delay(5);
 }
 
 void powerOffServo() {
   digitalWrite(SERVO_POWER_PIN, LOW);
-  pinMode(SERVO_POWER_PIN, INPUT); // save power
+  //pinMode(SERVO_POWER_PIN, INPUT); // save power
 }
 
 inline void manageServo() {
