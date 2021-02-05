@@ -9,7 +9,6 @@ const char* password = "";
 int capture_interval = 20000; // Microseconds between captures
 const char *post_url = "http://192.168.1.19/test/a.php"; // Location where images are POSTED
 
-bool internet_connected = false;
 long current_millis;
 long last_capture_millis = 0;
 
@@ -34,11 +33,6 @@ long last_capture_millis = 0;
 void setup()
 {
   Serial.begin(115200);
-  
-  // power on led
-  pinMode(4, INPUT);
-  digitalWrite(4, LOW);
-  rtc_gpio_hold_dis(GPIO_NUM_4);
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -76,7 +70,8 @@ void setup()
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
-    goToSleep();
+    delay(1000);
+    esp_deep_sleep_start();
   }
 
   // take picture
@@ -84,43 +79,53 @@ void setup()
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
-    goToSleep();
+    delay(1000);
+    esp_deep_sleep_start();
   }
 
   // Connected to WiFi
-  if (init_wifi()) {
-    internet_connected = true;
-    Serial.println("Internet connected");
-    sendPhoto(fb);
+  if (!initWifi()) {
+    Serial.println("Sleep forever");
+    delay(1000);
+    esp_deep_sleep_start();
   }
-  
+
+  sendPhoto(fb);
+
   // return the frame buffer back to be reused
   esp_camera_fb_return(fb);
 
-  // Turns off the ESP32-CAM white on-board LED (flash) connected to GPIO 4
-  pinMode(4, OUTPUT);
-  digitalWrite(4, LOW);
-  rtc_gpio_hold_en(GPIO_NUM_4);
-
-  goToSleep();  
+  while (true) {
+    Serial.println("Taking picture...");
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {
+      sendPhoto(fb);
+      esp_camera_fb_return(fb);
+    } else {
+      Serial.println("Camera capture failed");
+    }
+    
+    delay(1000);
+  }
 }
 
-void goToSleep() {
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_13,0); //1 = High, 0 = Low
-  esp_deep_sleep_start();
-}
-
-bool init_wifi()
-{
+bool initWifi() {
   int connAttempts = 0;
-  Serial.println("\r\nConnecting to: " + String(ssid));
+  Serial.print("Connecting to " + String(ssid) + " ");
   WiFi.begin(ssid, password);
+  
   while (WiFi.status() != WL_CONNECTED ) {
     delay(500);
     Serial.print(".");
-    if (connAttempts > 10) return false;
+    
+    if (connAttempts > 10) {
+      return false;
+    }
+    
     connAttempts++;
   }
+
+  Serial.println("connected!");
   return true;
 }
 
@@ -163,7 +168,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 static esp_err_t sendPhoto(camera_fb_t *fb)
 {
   Serial.println("Sending picture...");
-  
+
   esp_http_client_handle_t http_client;
   esp_http_client_config_t config_client = {0};
   config_client.url = post_url;
@@ -185,5 +190,5 @@ static esp_err_t sendPhoto(camera_fb_t *fb)
 
 void loop()
 {
-  
+
 }
