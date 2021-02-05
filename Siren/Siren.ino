@@ -71,6 +71,11 @@ RGBLed led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 Parser parser = Parser(' ');
 unsigned long _heartbeatTime = 0;
 
+// Message relay
+MyMessage msgRelay(1, V_CUSTOM);
+MyMessage msgToRelay;
+unsigned long relayTimer = 0;
+
 void before()
 {
   pinMode(SIREN, OUTPUT);
@@ -91,7 +96,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Siren", "2.1");
+  sendSketchInfo("Siren", "2.2");
   present(0, S_CUSTOM);
 }
 
@@ -131,6 +136,10 @@ void receive(const MyMessage &myMsg)
     } else {
       send(msg.set(F("command invalid")));
     }
+  }
+
+  if (myMsg.type == V_CUSTOM && myMsg.sensor == 1) {
+    relayMessage(&myMsg);
   }
 }
 
@@ -348,3 +357,65 @@ inline void manageHeartbeat() {
   _keyboardEnableTime = millis();
   }
 */
+
+void relayMessage(const MyMessage *message) {
+  if (getPayload(message->getString()) != NULL) {
+      msgToRelay.destination = getMessagePart(message->getString(), 0);
+      msgToRelay.sensor = getMessagePart(message->getString(), 1);
+      mSetCommand(msgToRelay, getMessagePart(message->getString(), 2));
+      mSetRequestAck(msgToRelay, getMessagePart(message->getString(), 3));
+      msgToRelay.type = getMessagePart(message->getString(), 4);
+      msgToRelay.sender = message->sender;
+      mSetAck(msgToRelay, false);
+      msgToRelay.set(getPayload(message->getString()));
+
+      relayTimer = millis();
+      bool success = false;
+      while(millis() - relayTimer < 2500 && !success) {
+        success = transportSendWrite(msgToRelay.destination, msgToRelay);
+        wait(5);
+      }
+
+      if (success) {
+        send(msgRelay.set(F("success")));
+      } else {
+        send(msgRelay.set(F("ko")));
+      }
+    }
+}
+
+int getMessagePart(const char* message, const byte index) {
+  byte indexCount = 0;
+
+  if (index == 0 && strlen(message) > 0) {
+    return atoi(message);
+  }
+  
+  for (byte i=0; i < strlen(message) - 1; i++) {
+    if (message[i] == '-') {
+      indexCount++;
+    }
+
+    if (indexCount == index) {
+      return atoi(message + i + 1);
+    }
+  }
+
+  return 0;
+}
+
+char* getPayload(const char* message) {
+  byte indexCount = 0;
+  
+  for (byte i=0; i < strlen(message) - 1; i++) {
+    if (message[i] == '-') {
+      indexCount++;
+    }
+
+    if (indexCount == 5) {
+      return message + i + 1;
+    }
+  }
+
+  return NULL;
+}
