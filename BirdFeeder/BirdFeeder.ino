@@ -6,6 +6,7 @@
 
 #define MY_RADIO_RF24
 #define MY_PARENT_NODE_ID 4
+#define MY_PARENT_NODE_IS_STATIC
 
 // Enable IRQ pin
 #define MY_RX_MESSAGE_BUFFER_FEATURE
@@ -53,10 +54,11 @@ void before() {
 void setup() {
   _state = SLEEPING;
   pinMode(SERVO_POWER_PIN, OUTPUT);
+  digitalWrite(SERVO_POWER_PIN, LOW);
 }
 
 void presentation() {
-  sendSketchInfo("Bird Feeder", "1.0");
+  sendSketchInfo("Bird Feeder", "1.1");
   present(0, S_CUSTOM);
 }
 
@@ -66,11 +68,18 @@ void receive(const MyMessage &message)
     parser.parse(message.getString());
 
     if (parser.isEqual(0, "close")) {
-      changeState(RUNNING);
-      closeGate();
+      if (!_servoMoving) {
+        changeState(RUNNING);
+        closeGate();
+      }
     } else if (parser.isEqual(0, "open")) {
-      changeState(RUNNING);
-      openGate();
+      if (!_servoMoving) {
+        changeState(RUNNING);
+        openGate();
+      }
+    } else if (parser.isEqual(0, "discover")) {
+      transportRouteMessage(build(_msgTmp, 0, NODE_SENSOR_ID, C_INTERNAL,
+                                            I_DISCOVER_RESPONSE).set(_transportConfig.parentNodeId));
     }
   }
 }
@@ -83,7 +92,6 @@ void loop() {
     _cpt += 1;
 
     if (_cpt % 21600UL == 0) { // 12H
-      sendHeartbeat();
       reportBatteryLevel();
       changeState(GOING_TO_SLEEP);
     }
@@ -123,14 +131,12 @@ void closeGate() {
 }
 
 void powerOnServo() {
-  //pinMode(SERVO_POWER_PIN, OUTPUT);
   digitalWrite(SERVO_POWER_PIN, HIGH);
   delay(5);
 }
 
 void powerOffServo() {
   digitalWrite(SERVO_POWER_PIN, LOW);
-  //pinMode(SERVO_POWER_PIN, INPUT); // save power
 }
 
 inline void manageServo() {
