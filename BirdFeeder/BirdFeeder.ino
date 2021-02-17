@@ -13,7 +13,6 @@
 #define MY_RF24_IRQ_PIN (2)
 
 #include <MySensors.h>
-#include <TimeLib.h>
 #include <Servo.h>
 #include <Parser.h>
 

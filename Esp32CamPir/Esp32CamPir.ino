@@ -6,11 +6,10 @@
 
 const char* ssid = "007";
 const char* password = "";
-int capture_interval = 20000; // Microseconds between captures
 const char *post_url = "http://192.168.1.19/test/a.php"; // Location where images are POSTED
 
-long current_millis;
-long last_capture_millis = 0;
+const int timerInterval = 1000;    // time between each HTTP POST image
+unsigned long previousMillis = 0;   // last time image was sent
 
 // CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM     32
@@ -30,10 +29,31 @@ long last_capture_millis = 0;
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-void setup()
-{
+void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200);
 
+  initWifi();
+  initCamera();
+  sendPhoto();
+}
+
+void initWifi() {
+  WiFi.mode(WIFI_STA);
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
+  Serial.print("ESP32-CAM IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void initCamera(){
+  Serial.print("Init camera... ");
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -55,13 +75,14 @@ void setup()
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
+
   //init with high specs to pre-allocate larger buffers
   if (psramFound()) {
-    config.frame_size = FRAMESIZE_UXGA;
+    config.frame_size = FRAMESIZE_SVGA;
     config.jpeg_quality = 10;
     config.fb_count = 2;
   } else {
-    config.frame_size = FRAMESIZE_SVGA;
+    config.frame_size = FRAMESIZE_CIF;
     config.jpeg_quality = 12;
     config.fb_count = 1;
   }
@@ -70,109 +91,35 @@ void setup()
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
-    delay(1000);
-    esp_deep_sleep_start();
+    delay(5000);
+    ESP.restart();
   }
 
-  // take picture
-  Serial.println("Taking picture...");
+  Serial.println("done");
+}
+
+void loop() {
+  if (millis() - previousMillis >= timerInterval) {
+    previousMillis = millis();
+    sendPhoto();
+  }
+}
+
+void sendPhoto() {
+  Serial.print("Taking picture... ");
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
     delay(1000);
-    esp_deep_sleep_start();
+    ESP.restart();
   }
+  Serial.println("done");
 
-  // Connected to WiFi
-  if (!initWifi()) {
-    Serial.println("Sleep forever");
-    delay(1000);
-    esp_deep_sleep_start();
-  }
-
-  sendPhoto(fb);
-
-  // return the frame buffer back to be reused
-  esp_camera_fb_return(fb);
-
-  while (true) {
-    Serial.println("Taking picture...");
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (fb) {
-      sendPhoto(fb);
-      esp_camera_fb_return(fb);
-    } else {
-      Serial.println("Camera capture failed");
-    }
-    
-    delay(1000);
-  }
-}
-
-bool initWifi() {
-  int connAttempts = 0;
-  Serial.print("Connecting to " + String(ssid) + " ");
-  WiFi.begin(ssid, password);
-  
-  while (WiFi.status() != WL_CONNECTED ) {
-    delay(500);
-    Serial.print(".");
-    
-    if (connAttempts > 10) {
-      return false;
-    }
-    
-    connAttempts++;
-  }
-
-  Serial.println("connected!");
-  return true;
-}
-
-
-esp_err_t _http_event_handler(esp_http_client_event_t *evt)
-{
-  switch (evt->event_id) {
-    case HTTP_EVENT_ERROR:
-      Serial.println("HTTP_EVENT_ERROR");
-      break;
-    case HTTP_EVENT_ON_CONNECTED:
-      Serial.println("HTTP_EVENT_ON_CONNECTED");
-      break;
-    case HTTP_EVENT_HEADER_SENT:
-      Serial.println("HTTP_EVENT_HEADER_SENT");
-      break;
-    case HTTP_EVENT_ON_HEADER:
-      Serial.println();
-      Serial.printf("HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
-      break;
-    case HTTP_EVENT_ON_DATA:
-      Serial.println();
-      Serial.printf("HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-      if (!esp_http_client_is_chunked_response(evt->client)) {
-        // Write out data
-        // printf("%.*s", evt->data_len, (char*)evt->data);
-      }
-      break;
-    case HTTP_EVENT_ON_FINISH:
-      Serial.println("");
-      Serial.println("HTTP_EVENT_ON_FINISH");
-      break;
-    case HTTP_EVENT_DISCONNECTED:
-      Serial.println("HTTP_EVENT_DISCONNECTED");
-      break;
-  }
-  return ESP_OK;
-}
-
-static esp_err_t sendPhoto(camera_fb_t *fb)
-{
-  Serial.println("Sending picture...");
-
+  Serial.print("Sending... ");
   esp_http_client_handle_t http_client;
   esp_http_client_config_t config_client = {0};
   config_client.url = post_url;
-  config_client.event_handler = _http_event_handler;
+  config_client.event_handler = httpEventHandler;
   config_client.method = HTTP_METHOD_POST;
 
   http_client = esp_http_client_init(&config_client);
@@ -181,14 +128,40 @@ static esp_err_t sendPhoto(camera_fb_t *fb)
 
   esp_err_t err = esp_http_client_perform(http_client);
   if (err == ESP_OK) {
-    Serial.print("esp_http_client_get_status_code: ");
     Serial.println(esp_http_client_get_status_code(http_client));
   }
 
   esp_http_client_cleanup(http_client);
+  esp_camera_fb_return(fb); // return the frame buffer back to be reused
 }
 
-void loop()
-{
+esp_err_t httpEventHandler(esp_http_client_event_t *evt) {
+  switch (evt->event_id) {
+    case HTTP_EVENT_ERROR:
+      Serial.println("HTTP_EVENT_ERROR");
+      break;
+    case HTTP_EVENT_ON_CONNECTED:
+      //Serial.println("HTTP_EVENT_ON_CONNECTED");
+      break;
+    case HTTP_EVENT_HEADER_SENT:
+      //Serial.println("HTTP_EVENT_HEADER_SENT");
+      break;
+    case HTTP_EVENT_ON_HEADER:
+      //Serial.println();
+      //Serial.printf("HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
+      break;
+    case HTTP_EVENT_ON_DATA:
+      //Serial.println();
+      //Serial.printf("HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+      break;
+    case HTTP_EVENT_ON_FINISH:
+      //Serial.println("");
+      //Serial.println("HTTP_EVENT_ON_FINISH");
+      break;
+    case HTTP_EVENT_DISCONNECTED:
+      //Serial.println("HTTP_EVENT_DISCONNECTED");
+      break;
+  }
 
+  return ESP_OK;
 }
