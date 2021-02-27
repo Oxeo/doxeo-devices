@@ -1,195 +1,143 @@
-#define MY_DEBUG
+//#define MY_DEBUG
 
 #define MY_RADIO_RF24
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
-#define MY_TRANSPORT_MAX_TX_FAILURES (3u)
+//#define MY_PARENT_NODE_ID 19
+//#define MY_PARENT_NODE_IS_STATIC
+
+// Enable IRQ pin
+#define MY_RX_MESSAGE_BUFFER_FEATURE
+#define MY_RF24_IRQ_PIN (2)
 
 #include <MySensors.h>
 #include <Parser.h>
 
-#define SENSOR_ID 0
 #define PUMP_PIN 5
-#define PIR_PIN 3
-#define GREEN_LED_PIN A1
-#define RED_LED_PIN A3
 #define WATER_SENSOR_PIN A0
+#define BATTERY_LEVEL_PIN A1
+#define EEPROM_VOLTAGE_CORRECTION 0
 
-#define EEPROM_WATER_STATUS 0
-#define EEPROM_MODE 1
-#define EEPROM_DURATION 2
-#define EEPROM_SPACING_HIGH_BYTE 4
-#define EEPROM_SPACING_LOW_BYTE 5
+struct FuelGauge {
+  float voltage;
+  int percent;
+};
 
-MyMessage msg(SENSOR_ID, V_CUSTOM);
-Parser parser = Parser('-');
-bool _risingEvent;
+enum state_enum {SLEEPING, RUNNING};
+uint8_t _state;
+
+MyMessage msg(0, V_CUSTOM);
+Parser parser = Parser(' ');
+unsigned long _cpt = 0;
 bool _waterTankEmpty;
-uint8_t _mode;
-unsigned long _duration;
-unsigned long _spacing;
+unsigned long _duration = 10;
+unsigned long _startTime = 0;
+float _voltageCorrection = 1;
+int _batteryPercent = 0;
 
 void before()
 {
-  pinMode(PUMP_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-
-  pinMode(PIR_PIN, INPUT);
+  pinMode(PUMP_PIN, INPUT);
   pinMode(WATER_SENSOR_PIN, INPUT);
+  pinMode(BATTERY_LEVEL_PIN, INPUT);
+  _waterTankEmpty = false;
+  _state = SLEEPING;
+  _cpt = 0;
 
-  digitalWrite(PUMP_PIN, LOW);
-  digitalWrite(GREEN_LED_PIN, LOW);
-  digitalWrite(RED_LED_PIN, HIGH);
+  //saveVoltageCorrection(0.9845); // Measured by multimeter divided by reported
+  _voltageCorrection = getVoltageCorrection();
+  analogReference(INTERNAL);
+  getFuelGauge(); // first read is wrong
+  FuelGauge gauge = getFuelGauge();
 }
 
 void setup()
 {
-  _mode = readEeprom(EEPROM_MODE, 1);
-  _duration = readEeprom(EEPROM_DURATION, 2);
-  _spacing = readEeprom(EEPROM_SPACING_HIGH_BYTE, EEPROM_SPACING_LOW_BYTE, 0);
-  _waterTankEmpty = loadState(EEPROM_WATER_STATUS);
-
-#ifdef MY_DEBUG
-  Serial.println ("Mode: " + String(_mode));
-  Serial.println ("Duration: " + String(_duration));
-  Serial.println ("Spacing: " + String(_spacing));
-#endif
-
-  request(0, V_CUSTOM, 0);
-
-  digitalWrite(RED_LED_PIN, LOW);
-  for (byte i = 0; i < 20; i++) {
-    if (i % 2 == 0) {
-      digitalWrite(GREEN_LED_PIN, HIGH);
-    } else {
-      digitalWrite(GREEN_LED_PIN, LOW);
-    }
-    wait(100);
-  }
-
   send(msg.set(F("cat repellent started")));
 }
 
 void presentation()
 {
-  sendSketchInfo("Cat Repellent", "1.0");
-  present(SENSOR_ID, S_CUSTOM);
+  sendSketchInfo("Cat Repellent", "2.0");
+  present(0, S_CUSTOM);
 }
 
-void receive(const MyMessage &myMsg)
+void receive(const MyMessage &message)
 {
-  if (myMsg.type == V_CUSTOM && myMsg.sensor == 0) {
-#ifdef MY_DEBUG
-    Serial.print("New message: ");
-    Serial.println(myMsg.getString());
-#endif
+  if (message.type == V_CUSTOM && message.sensor == 0) {
+    parser.parse(message.getString());
 
-    parser.parse(myMsg.getString());
-    if (parser.get(0) != NULL && parser.get(1) != NULL && parser.get(2) != NULL) {
-      _mode = parser.getInt(0);
-      _duration = parser.getInt(1);
-      _spacing = parser.getInt(2);
-
-#ifdef MY_DEBUG
-      Serial.println ("Mode: " + String(_mode));
-      Serial.println ("Duration: " + String(_duration));
-      Serial.println ("Spacing: " + String(_spacing));
-#endif
-
-      // stop pump if mode = 0
-      if (_mode == 0) {
-        digitalWrite(PUMP_PIN, LOW);
-      }
-
-      // Store mode in eeprom
-      if (loadState(EEPROM_MODE) != _mode) {
-        saveState(EEPROM_MODE, _mode);
-        send(msg.set(F("mode updated")));
-      }
-
-      // Store duration in eeprom
-      if (loadState(EEPROM_DURATION) != _duration) {
-        saveState(EEPROM_DURATION, _duration);
-        send(msg.set(F("duration updated")));
-      }
-
-      // Store spacing in eeprom
-      if (readEeprom(EEPROM_SPACING_HIGH_BYTE, EEPROM_SPACING_LOW_BYTE, 0) != _spacing) {
-        saveState(EEPROM_SPACING_HIGH_BYTE, highByte(_spacing));
-        saveState(EEPROM_SPACING_LOW_BYTE, lowByte(_spacing));
-        
-        send(msg.set(F("spacing updated")));
-      }
+    if (parser.isEqual(0, "stop")) {
+      stopPump();
+    } else if (parser.isEqual(0, "start") && parser.get(1) != NULL) {
+      startPump(parser.getInt(1));
+    } else {
+      send(msg.set(F("invalid command")));
     }
   }
 }
 
 void loop()
 {
-  if (_mode == 3) {
-    if (digitalRead(PIR_PIN) == HIGH) {
-      digitalWrite(GREEN_LED_PIN, HIGH);
-    } else {
-      digitalWrite(GREEN_LED_PIN, LOW);
+  if (_state == SLEEPING) {
+    sleep(985);
+    RF24_startListening();
+    wait(15);
+
+    _cpt += 1;
+    if (_cpt == 21600) { // 6H
+      _cpt = 0;
+      reportBatteryLevel();
+      sendHeartbeat();
     }
-  } else {
-    if (digitalRead(PIR_PIN) == HIGH) {
-      bool empty = isWaterTankEmpty();
+  } else if (_state == RUNNING) {
+    managePump();
+  }
+}
 
-      if (empty) {
-        digitalWrite(RED_LED_PIN, HIGH);
-      } else {
-        digitalWrite(GREEN_LED_PIN, HIGH);
-      }
+inline void managePump() {
+  if (millis() - _startTime > _duration) {
+    stopPump();
+  }
 
-      if ((!empty && _mode == 1) || _mode == 2) {
-        digitalWrite(PUMP_PIN, HIGH);
-      }
-
-      if (_risingEvent) {
-        send(msg.set(F("cat alert")));
-      }
-
-      // send water tank alert
-      if (!_waterTankEmpty && empty) {
-        send(msg.set(F("water tank is empty")));
-        _waterTankEmpty = true;
-        saveState(EEPROM_WATER_STATUS, _waterTankEmpty);
-      } else if (_waterTankEmpty && !empty) {
-        send(msg.set(F("water tank is full")));
-        _waterTankEmpty = false;
-        saveState(EEPROM_WATER_STATUS, _waterTankEmpty);
-      }
-
-      if (_risingEvent) {
-        request(0, V_CUSTOM, 0);
-      }
-
-      wait(_duration * 1000);
-
-      digitalWrite(PUMP_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, LOW);
-      digitalWrite(RED_LED_PIN, LOW);
-
-      if (_spacing > 0) {
-        sleep(_spacing * 1000);
-      }
-
-      _risingEvent = false;
-    } else {
-      pinMode(PUMP_PIN, INPUT);
-      pinMode(GREEN_LED_PIN, INPUT);
-      pinMode(RED_LED_PIN, INPUT);
-      
-      sleep(digitalPinToInterrupt(PIR_PIN), RISING, 0);
-
-      pinMode(PUMP_PIN, OUTPUT);
-      pinMode(GREEN_LED_PIN, OUTPUT);
-      pinMode(RED_LED_PIN, OUTPUT);
-  
-      _risingEvent = true;
+  if (millis() - _startTime > 100UL) {
+    if (digitalRead(WATER_SENSOR_PIN) == HIGH) {
+      stopPump();
+      _waterTankEmpty = true;
+      send(msg.set(F("water tank is empty")));
     }
   }
+}
+
+void changeState(uint8_t state) {
+  switch (state) {
+    case SLEEPING:
+      break;
+    case RUNNING:
+      _startTime = millis();
+      break;
+  }
+
+  _state = state;
+}
+
+void startPump(int duration) {
+  if (_waterTankEmpty && isWaterTankEmpty()) {
+    send(msg.set(F("water tank is empty")));
+    return;
+  }
+  
+  send(msg.set(F("started")));
+  _duration = duration * 1000UL;
+  pinMode(PUMP_PIN, OUTPUT);
+  digitalWrite(PUMP_PIN, LOW);
+  pinMode(WATER_SENSOR_PIN, INPUT_PULLUP);
+  changeState(RUNNING);
+}
+
+void stopPump() {
+  pinMode(PUMP_PIN, INPUT);
+  pinMode(WATER_SENSOR_PIN, INPUT);
+  send(msg.set(F("stopped")));
+  changeState(SLEEPING);
 }
 
 bool isWaterTankEmpty() {
@@ -200,20 +148,53 @@ bool isWaterTankEmpty() {
   return result;
 }
 
-uint8_t readEeprom(uint8_t pos, uint8_t defaultValue) {
-  uint8_t value = loadState(pos);
+void reportBatteryLevel() {
+  FuelGauge gauge = getFuelGauge();
 
-  if (value == 0xFF) {
-    return defaultValue;
-  } else {
-    return value;
+#ifdef MY_DEBUG
+  Serial.print(F("Voltage: "));
+  Serial.print(gauge.voltage, 4);
+  Serial.print(F(" ("));
+  Serial.print(gauge.percent);
+  Serial.println(F("%)"));
+#endif
+
+  if (gauge.percent != _batteryPercent) {
+    String voltageMsg = "voltage-" + String(gauge.voltage) + "-" + String(gauge.percent);
+    send(msg.set(voltageMsg.c_str()));
+    sendBatteryLevel(gauge.percent);
+    _batteryPercent = gauge.percent;
   }
 }
 
-unsigned int readEeprom(uint8_t posHighByte, uint8_t posLowByte, unsigned int defaultValue) {
-  if (loadState(posHighByte) == 0xFF && loadState(posLowByte) == 0xFF) {
-    return defaultValue;
-  } else {
-    return word(loadState(posHighByte), loadState(posLowByte));
+FuelGauge getFuelGauge() {
+  FuelGauge gauge;
+  int analog = analogRead(BATTERY_LEVEL_PIN);  // 0 - 1023
+  float u2 = (analog * 1.1) / 1023.0;
+  gauge.voltage = (u2 * (1000000.0 + 47000.0)) / 47000.0;
+  gauge.voltage *= _voltageCorrection;
+
+  int um = round(gauge.voltage * 1000.0);
+  gauge.percent = map(um, 12000, 13000, 0, 100);
+
+  return gauge;
+}
+
+void saveVoltageCorrection(float value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    saveState(EEPROM_VOLTAGE_CORRECTION + i, b[i]);
   }
+}
+
+float getVoltageCorrection() {
+  float value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = loadState(EEPROM_VOLTAGE_CORRECTION + i);
+  }
+
+  return value;
 }
