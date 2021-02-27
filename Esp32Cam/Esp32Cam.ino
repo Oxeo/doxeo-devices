@@ -2,14 +2,28 @@
 #include "esp_camera.h"
 #include "driver/rtc_io.h"
 #include <WiFi.h>
+#include <EEPROM.h>
 #include "Arduino.h"
 
-const char* ssid = "007";
-const char* password = "";
-const char *post_url = "http://192.168.1.19/test/a.php"; // Location where images are POSTED
+#if defined(MY_DEBUG)
+#define DEBUG_PRINT(str) Serial.println(str);
+#else
+#define DEBUG_PRINT(str)
+#endif
+
+const char *postUrl = "http://192.168.1.19/test/a.php";
+
+char wifiSsid[32];
+char wifiPassword[32];
 
 const int timerInterval = 1000;    // time between each HTTP POST image
 unsigned long previousMillis = 0;   // last time image was sent
+
+enum mode_enum {NORMAL_MODE, DEBUG_MODE};
+uint8_t _mode;
+
+#define LED_BLUE 13
+#define LED_RED 12
 
 // CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM     32
@@ -30,9 +44,23 @@ unsigned long previousMillis = 0;   // last time image was sent
 #define PCLK_GPIO_NUM     22
 
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
-  Serial.begin(115200);
+  pinMode(LED_BLUE, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
 
+  digitalWrite(LED_BLUE, LOW);
+  digitalWrite(LED_RED, LOW);
+
+  //strcat(wifiSsid, "mySSID");
+  //strcat(wifiPassword, "myPassword");
+  //writeEEPROM(0, 32, wifiSsid); //32 byte max length
+  //writeEEPROM(32, 32, wifiPassword); //32 byte max length
+
+  readEEPROM(0, 32, wifiSsid);
+  readEEPROM(32, 32, wifiPassword);
+
+  Serial.begin(9600);
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
+  _mode = NORMAL_MODE;
   initWifi();
   initCamera();
   sendPhoto();
@@ -40,20 +68,21 @@ void setup() {
 
 void initWifi() {
   WiFi.mode(WIFI_STA);
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
+  DEBUG_PRINT("Connecting to ");
+  DEBUG_PRINT(wifiSsid);
+
+  WiFi.begin(wifiSsid, wifiPassword);
   while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
+    DEBUG_PRINT(".");
     delay(500);
   }
-  Serial.println();
-  Serial.print("ESP32-CAM IP Address: ");
-  Serial.println(WiFi.localIP());
+
+  DEBUG_PRINT("ESP32-CAM IP Address: ");
+  DEBUG_PRINT(WiFi.localIP());
 }
 
-void initCamera(){
-  Serial.print("Init camera... ");
+void initCamera() {
+  DEBUG_PRINT("Init camera... ");
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -90,35 +119,54 @@ void initCamera(){
   // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
+    digitalWrite(LED_RED, HIGH);
     Serial.printf("Camera init failed with error 0x%x", err);
     delay(5000);
     ESP.restart();
   }
 
-  Serial.println("done");
+  DEBUG_PRINT("Camera init done");
 }
 
 void loop() {
+  while (Serial.available()) {
+    String msg = Serial.readString();
+
+    if (msg.startsWith("debug_mode")) {
+      Serial.println("debug mode started");
+      _mode = DEBUG_MODE;
+    } else if (msg.startsWith("normal_mode")) {
+      Serial.println("normal mode started");
+      _mode = NORMAL_MODE;
+    }
+  }
+  
   if (millis() - previousMillis >= timerInterval) {
     previousMillis = millis();
-    sendPhoto();
+
+    if (_mode == NORMAL_MODE) {
+      sendPhoto();
+    } else if (_mode == DEBUG_MODE) {
+      Serial.println(WiFi.RSSI());
+    }
   }
 }
 
 void sendPhoto() {
-  Serial.print("Taking picture... ");
+  DEBUG_PRINT("Taking picture...");
+  digitalWrite(LED_BLUE, HIGH);
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
+    digitalWrite(LED_RED, HIGH);
     Serial.println("Camera capture failed");
     delay(1000);
     ESP.restart();
   }
-  Serial.println("done");
 
-  Serial.print("Sending... ");
+  DEBUG_PRINT("Sending picture...");
   esp_http_client_handle_t http_client;
   esp_http_client_config_t config_client = {0};
-  config_client.url = post_url;
+  config_client.url = postUrl;
   config_client.event_handler = httpEventHandler;
   config_client.method = HTTP_METHOD_POST;
 
@@ -128,11 +176,16 @@ void sendPhoto() {
 
   esp_err_t err = esp_http_client_perform(http_client);
   if (err == ESP_OK) {
+    DEBUG_PRINT("success");
+  } else {
     Serial.println(esp_http_client_get_status_code(http_client));
+    digitalWrite(LED_RED, HIGH);
   }
-
+  
   esp_http_client_cleanup(http_client);
   esp_camera_fb_return(fb); // return the frame buffer back to be reused
+  digitalWrite(LED_BLUE, LOW);
+  delay(100);
 }
 
 esp_err_t httpEventHandler(esp_http_client_event_t *evt) {
@@ -164,4 +217,34 @@ esp_err_t httpEventHandler(esp_http_client_event_t *evt) {
   }
 
   return ESP_OK;
+}
+
+void writeEEPROM(int startAdr, int maxLength, char* writeString) {
+  EEPROM.begin(512); //Max bytes of eeprom to use
+  yield();
+
+  for (int i = 0; i < maxLength; i++) {
+    EEPROM.write(startAdr + i, writeString[i]);
+    if (writeString[i] == '\0') {
+      break;
+    }
+  }
+
+  EEPROM.commit();
+  EEPROM.end();
+}
+
+void readEEPROM(int startAdr, int maxLength, char* dest) {
+  EEPROM.begin(512);
+  delay(10);
+
+  for (int i = 0; i < maxLength; i++) {
+    dest[i] = char(EEPROM.read(startAdr + i));
+
+    if (dest[i] == '\0') {
+      break;
+    }
+  }
+
+  EEPROM.end();
 }
