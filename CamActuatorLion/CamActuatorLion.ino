@@ -27,7 +27,7 @@ struct FuelGauge {
 enum state_enum {SLEEPING, START_CAM, RUNNING, STOP_CAM, GOING_TO_SLEEP};
 uint8_t _state;
 
-enum mode_enum {NORMAL_MODE, DEBUG_MODE};
+enum mode_enum {NORMAL_MODE, DEBUG_MODE, REPORT_MODE};
 uint8_t _mode;
 
 Parser parser = Parser(' ');
@@ -80,6 +80,8 @@ void receive(const MyMessage &message)
 
       if (parser.isEqual(2, "d")) {
         _mode = DEBUG_MODE;
+      } else if (parser.isEqual(2, "r")) {
+        _mode = REPORT_MODE;
       } else {
         _mode = NORMAL_MODE;
       }
@@ -148,9 +150,11 @@ void changeState(state_enum state) {
     case RUNNING:
       send(msg.set(F("started")));
       esp32Serial.begin(9600);
-      delay(1000);
+      delay(200);
       if (_mode == DEBUG_MODE) {
         esp32Serial.println("debug_mode");
+      } else if (_mode == REPORT_MODE) {
+        esp32Serial.println("report_mode");
       }
       break;
     case STOP_CAM:

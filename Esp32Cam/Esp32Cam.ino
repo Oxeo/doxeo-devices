@@ -19,7 +19,7 @@ char wifiPassword[32];
 const int timerInterval = 1000;    // time between each HTTP POST image
 unsigned long previousMillis = 0;   // last time image was sent
 
-enum mode_enum {NORMAL_MODE, DEBUG_MODE};
+enum mode_enum {NORMAL_MODE, DEBUG_MODE, REPORT_MODE};
 uint8_t _mode;
 
 #define LED_BLUE 13
@@ -133,18 +133,18 @@ void loop() {
     String msg = Serial.readString();
 
     if (msg.startsWith("debug_mode")) {
-      Serial.println("debug mode started");
       _mode = DEBUG_MODE;
     } else if (msg.startsWith("normal_mode")) {
-      Serial.println("normal mode started");
       _mode = NORMAL_MODE;
+    } else if (msg.startsWith("report_mode")) {
+      _mode = REPORT_MODE;
     }
   }
   
   if (millis() - previousMillis >= timerInterval) {
     previousMillis = millis();
 
-    if (_mode == NORMAL_MODE) {
+    if (_mode == NORMAL_MODE || _mode == REPORT_MODE) {
       sendPhoto();
     } else if (_mode == DEBUG_MODE) {
       Serial.println(WiFi.RSSI());
@@ -177,6 +177,9 @@ void sendPhoto() {
   esp_err_t err = esp_http_client_perform(http_client);
   if (err == ESP_OK) {
     DEBUG_PRINT("success");
+    if (_mode == REPORT_MODE) {
+      Serial.println("send");
+    }
   } else {
     Serial.println(esp_http_client_get_status_code(http_client));
     digitalWrite(LED_RED, HIGH);
@@ -184,8 +187,9 @@ void sendPhoto() {
   
   esp_http_client_cleanup(http_client);
   esp_camera_fb_return(fb); // return the frame buffer back to be reused
+  delay(50);
   digitalWrite(LED_BLUE, LOW);
-  delay(100);
+  delay(50);
 }
 
 esp_err_t httpEventHandler(esp_http_client_event_t *evt) {
