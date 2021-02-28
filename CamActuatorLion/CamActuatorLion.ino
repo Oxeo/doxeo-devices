@@ -42,7 +42,7 @@ byte esp32DataCpt = 0;
 
 float _voltageCorrection = 1;
 const int _lionTab[] = {3500, 3550, 3590, 3610, 3640, 3710, 3790, 3880, 3970, 4080, 4200};
-int _batteryPercent = 0;
+int _batteryPercent = 101;
 
 void before() {
   pinMode(ESP32_P13_PIN, INPUT);
@@ -63,6 +63,8 @@ void before() {
 void setup() {
   _state = SLEEPING;
   _cpt = 0;
+  _batteryPercent = 101;
+  reportBatteryLevel();
 }
 
 void presentation() {
@@ -85,12 +87,19 @@ void receive(const MyMessage &message)
       } else {
         _mode = NORMAL_MODE;
       }
-      
-      if (_state != START_CAM && _state != RUNNING) {
+
+      if (_state == RUNNING) {
+        _stateTimer = millis();
+      } else if (_state != START_CAM) {
         changeState(START_CAM);
       }
     } else if (parser.isEqual(0, "stop")) {
       changeState(STOP_CAM);
+    } else if (parser.isEqual(0, "ssid") && parser.get(1) != NULL) {
+      if (_state == RUNNING) {
+        esp32Serial.print("ssid:");
+        esp32Serial.println(parser.get(1));
+      }
     }
   }
 }
@@ -187,7 +196,7 @@ void reportBatteryLevel() {
   Serial.println(F("%)"));
 #endif
 
-  if (gauge.percent != _batteryPercent) {
+  if (gauge.percent < _batteryPercent) {
     String voltageMsg = "voltage-" + String(gauge.voltage) + "-" + String(gauge.percent);
     send(msg.set(voltageMsg.c_str()));
     sendBatteryLevel(gauge.percent);

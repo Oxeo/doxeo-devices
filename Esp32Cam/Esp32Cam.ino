@@ -5,6 +5,8 @@
 #include <EEPROM.h>
 #include "Arduino.h"
 
+//#define MY_DEBUG;
+
 #if defined(MY_DEBUG)
 #define DEBUG_PRINT(str) Serial.println(str);
 #else
@@ -19,7 +21,7 @@ char wifiPassword[32];
 const int timerInterval = 1000;    // time between each HTTP POST image
 unsigned long previousMillis = 0;   // last time image was sent
 
-enum mode_enum {NORMAL_MODE, DEBUG_MODE, REPORT_MODE};
+enum mode_enum {NORMAL_MODE, DEBUG_MODE, REPORT_MODE, NO_WIFI};
 uint8_t _mode;
 
 #define LED_BLUE 13
@@ -44,26 +46,30 @@ uint8_t _mode;
 #define PCLK_GPIO_NUM     22
 
 void setup() {
+  Serial.begin(9600);
+  
   pinMode(LED_BLUE, OUTPUT);
   pinMode(LED_RED, OUTPUT);
-
   digitalWrite(LED_BLUE, LOW);
   digitalWrite(LED_RED, LOW);
 
-  //strcat(wifiSsid, "mySSID");
-  //strcat(wifiPassword, "myPassword");
+  //strcpy (wifiSsid, "mySSID");
+  //strcpy (wifiPassword, "myPassword");
   //writeEEPROM(0, 32, wifiSsid); //32 byte max length
   //writeEEPROM(32, 32, wifiPassword); //32 byte max length
 
   readEEPROM(0, 32, wifiSsid);
   readEEPROM(32, 32, wifiPassword);
 
-  Serial.begin(9600);
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   _mode = NORMAL_MODE;
   initWifi();
   initCamera();
-  sendPhoto();
+
+  if (_mode == NORMAL_MODE || _mode == REPORT_MODE) {
+    sendPhoto();
+    Serial.println("first image sended");
+  }
 }
 
 void initWifi() {
@@ -72,13 +78,24 @@ void initWifi() {
   DEBUG_PRINT(wifiSsid);
 
   WiFi.begin(wifiSsid, wifiPassword);
+
+  int cpt = 0;
   while (WiFi.status() != WL_CONNECTED) {
     DEBUG_PRINT(".");
     delay(500);
+    cpt++;
+
+    if (cpt > 20) {
+      _mode = NO_WIFI;
+      Serial.println("No wifi");
+      break;
+    }
   }
 
-  DEBUG_PRINT("ESP32-CAM IP Address: ");
-  DEBUG_PRINT(WiFi.localIP());
+  if (_mode != NO_WIFI) {
+    DEBUG_PRINT("ESP32-CAM IP Address: ");
+    DEBUG_PRINT(WiFi.localIP());
+  }
 }
 
 void initCamera() {
@@ -138,6 +155,22 @@ void loop() {
       _mode = NORMAL_MODE;
     } else if (msg.startsWith("report_mode")) {
       _mode = REPORT_MODE;
+    } else if (msg.startsWith("ssid:")) {
+      String ssid = msg.substring(5);
+      ssid.replace("\n", "");
+      ssid.replace("\r", "");
+      ssid.toCharArray(wifiSsid, sizeof(wifiSsid));
+      writeEEPROM(0, 32, wifiSsid);
+      Serial.print("New SSID: ");
+      Serial.println(wifiSsid);
+    } else if (msg.startsWith("password:")) {
+      String password = msg.substring(9);
+      password.replace("\n", "");
+      password.replace("\r", "");
+      password.toCharArray(wifiPassword, sizeof(wifiPassword));
+      writeEEPROM(32, 32, wifiPassword);
+      Serial.print("New password: ");
+      Serial.println(wifiPassword);
     }
   }
   
