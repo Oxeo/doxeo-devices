@@ -17,7 +17,7 @@
 #include "lwip/sys.h"
 
 #define WIFI_SSID      "007"
-#define WIFI_PASS      "mypassword"
+#define WIFI_PASS      ""
 #define EXAMPLE_ESP_MAXIMUM_RETRY  50
 
 //#define IPADDR_MY         ((u32_t)0x2301A8C0UL) // 192.168.1.35
