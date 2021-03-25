@@ -1,6 +1,5 @@
 //#define MY_DEBUG
 #define MY_RADIO_RF24
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 
 #include <MySensors.h>
 #include <Vcc.h>
@@ -29,12 +28,7 @@ uint8_t _state = SLEEPING;
 unsigned long _coldCpt = 0;
 unsigned long _readyCpt = 0;
 int _mode = 1;
-
-static uint8_t _oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
-const float _vccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
-const float _vccMax        = 2.0 * 1.6; // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
-const float _vccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
-static Vcc _vcc(_vccCorrection);
+int _blinkCpt = 0; 
 
 void before()
 {
@@ -47,7 +41,7 @@ void before()
 
 void presentation()
 {
-  sendSketchInfo("Hot Tea Alert", "1.1");
+  sendSketchInfo("Hot Tea Alert", "1.2");
   present(STATE_ID, S_INFO, "State status");
   present(TEMP_ID, S_TEMP, "Tea temperature");
 }
@@ -115,11 +109,24 @@ void loop()
         }
       }
     } else if (_state == COLD) {
-      _coldCpt++;
+      if (_blinkCpt % 3 == 0) {
+        digitalWrite(BLUE_LED_PIN, HIGH);
+        delay(300);
+        digitalWrite(BLUE_LED_PIN, LOW);
+      }
+      _blinkCpt++;
       
+      _coldCpt++;
       if (_coldCpt >= 60) {  // sleeping mode after 1 minutes
         changeState(SLEEPING);
       }
+    } else if (_state == HOT) {
+      if (_blinkCpt % 3 == 0) {
+        digitalWrite(RED_LED_PIN, HIGH);
+        delay(300);
+        digitalWrite(RED_LED_PIN, LOW);
+      }
+      _blinkCpt++;
     }
 
     sleep(1000);
@@ -149,7 +156,6 @@ void changeState(uint8_t state) {
       pinMode(RED_LED_PIN, INPUT);
       pinMode(GREEN_LED_PIN, INPUT);
       pinMode(BLUE_LED_PIN, INPUT);
-      reportBatteryLevel();
       break;
     case STARTING:
       pinMode(RED_LED_PIN, OUTPUT);
@@ -277,24 +283,6 @@ float getTemperature() {
   float celsius = tempData - 273.15; // Conversion des degrés Kelvin en degrés Celsius
 
   return celsius;
-}
-
-void reportBatteryLevel() {
-  const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + _vcc.Read_Perc(_vccMin, _vccMax));
-
-#ifdef MY_DEBUG
-  Serial.print(F("Vbat "));
-  Serial.print(_vcc.Read_Volts());
-  Serial.print(F("\tPerc "));
-  Serial.println(batteryPcnt);
-#endif
-
-  // Battery readout should only go down. So report only when new value is smaller than previous one.
-  if ( batteryPcnt < _oldBatteryPcnt )
-  {
-    sendBatteryLevel(batteryPcnt);
-    _oldBatteryPcnt = batteryPcnt;
-  }
 }
 
 void runningLight() {
