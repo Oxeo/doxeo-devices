@@ -43,7 +43,7 @@ void app_main(void)
     fileNumber = getNumberOfFiles() + 1;
     savePhoto();
 
-    while (esp_timer_get_time() < 10000000UL) {
+    while (esp_timer_get_time() < 9000000UL) {
         if (esp_timer_get_time() - previousMillis >= 500000UL) {
           previousMillis = esp_timer_get_time();
           savePhoto();
@@ -141,7 +141,7 @@ esp_err_t initAiThinkerCamera() {
   config.pin_reset = -1;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_UXGA; //FRAMESIZE_XGA;
+  config.frame_size = FRAMESIZE_XGA; // 1024 x 768
   config.jpeg_quality = 10;
   config.fb_count = 2;
 
@@ -151,6 +151,11 @@ esp_err_t initAiThinkerCamera() {
       printf("Init camera error\n");
       return err;
   }
+
+  // rotate 180
+  sensor_t * s = esp_camera_sensor_get();
+  s->set_hmirror(s, 1); 
+  s->set_vflip(s, 1);   
 
   return ESP_OK;
 }
