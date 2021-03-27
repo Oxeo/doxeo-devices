@@ -13,7 +13,11 @@
     "python.pythonPath": "C:\\Users\\snyfir\\AppData\\Local\\Programs\\Python\\Python39\\python.exe",
     "files.associations": {
         "cstddef": "c",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "utility": "c"
     },
     "editor.defaultFormatter": "esbenp.prettier-vscode",
 }

@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
 #include "sdkconfig.h"
 #include "esp_camera.h"
 #include <string.h>
@@ -18,10 +19,9 @@
 
 #define WIFI_SSID      "007"
 #define WIFI_PASS      ""
-#define EXAMPLE_ESP_MAXIMUM_RETRY  50
 
-//#define IPADDR_MY         ((u32_t)0x2301A8C0UL) // 192.168.1.35
-#define IPADDR_MY         ((u32_t)0x0B01A8C0UL) // 192.168.1.11
+//#define IPADDR_MY         ((u32_t)0x2301A8C0UL) // 192.168.1.35 (test camera)
+#define IPADDR_MY         ((u32_t)0x0B01A8C0UL) // 192.168.1.11 (outdoor camera)
 #define IPADDR_GW         ((u32_t)0xFE01A8C0UL) // 192.168.1.254
 #define IPADDR_NETMASK    ((u32_t)0x00FFFFFFUL) // 255.255.255.0
 
@@ -33,13 +33,13 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-static int s_retry_num = 0;
 unsigned long previousMillis = 0;   // last time image was sent
-unsigned int sendNumber = 1;
+unsigned int sendNumber = 0;
 
 #define LED_BLUE 13
 #define LED_RED 12
-#define BUTTON1 14
+
+#define BUF_SIZE (1024)
 
 esp_err_t initAiThinkerCamera();
 void initWifi(void);
@@ -49,10 +49,8 @@ void sendPhoto();
 
 void app_main(void)
 {
-    gpio_pad_select_gpio(BUTTON1);
     gpio_pad_select_gpio(LED_BLUE);
     gpio_pad_select_gpio(LED_RED);
-    gpio_set_direction(BUTTON1, GPIO_MODE_INPUT);
     gpio_set_direction(LED_BLUE, GPIO_MODE_OUTPUT);
     gpio_set_direction(LED_RED, GPIO_MODE_OUTPUT);
 
@@ -71,21 +69,42 @@ void app_main(void)
 
     initWifi();
     initAiThinkerCamera();
-    printf("started\n");
+
+    // init UART
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0));
+    uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
+
+    printf("ready\n");
 
     while(1) {
+        int len = uart_read_bytes(UART_NUM_0 , data, BUF_SIZE, 20 / portTICK_RATE_MS);
+        if (len > 0) {
+          if (len > 2 && data[0] == 'g' && data[1] == 'c') {
+            int cell = data[2] - '0'; // 0 to 6
+            sensor_t * s = esp_camera_sensor_get();
+            s->set_gainceiling(s, (gainceiling_t) cell);
+            printf("gain ceiling %d\n", cell);
+          } else if (len > 2 && data[0] == 'f' && data[1] == 's') {
+            int size = data[2] - '0'; // 0 to 13
+            sensor_t * s = esp_camera_sensor_get();
+            s->set_framesize(s, (framesize_t) size);
+            printf("frame size %d\n", size);
+          }
+        }
+
         if (esp_timer_get_time() - previousMillis >= 1000000UL) {
           previousMillis = esp_timer_get_time();
           gpio_set_level(LED_BLUE, 1);
           sendPhoto();
+
+          if (sendNumber == 1) {
+            sensor_t * s = esp_camera_sensor_get();
+            s->set_framesize(s, FRAMESIZE_XGA);
+          }
+
           gpio_set_level(LED_BLUE, 0);
           vTaskDelay(50 / portTICK_PERIOD_MS);
         }
-
-        //vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-        //esp_sleep_enable_ext0_wakeup(BUTTON1, 1);
-        //esp_deep_sleep_start();
     }
 }
 
@@ -108,6 +127,7 @@ void sendPhoto() {
   esp_err_t err = esp_http_client_perform(http_client);
 
   if (err == ESP_OK) {
+    sendNumber++;
     if (sendNumber < 4 || sendNumber % 10 == 0) {
       printf("send %d\n", sendNumber);
     }
@@ -115,7 +135,7 @@ void sendPhoto() {
     printf("send error: %d\n", err);
   }
 
-  sendNumber++;
+  
   esp_http_client_cleanup(http_client);
   esp_camera_fb_return(fb); // return the frame buffer back to be reused
 }
@@ -199,25 +219,11 @@ void wifiEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, 
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         printf("connect fail\n");
-
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
-            esp_wifi_connect();
-            s_retry_num++;
-            printf("retry to connect\n");
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-        }
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
-        /*printf("sta connected\n");
-        wifi_event_sta_connected_t* event = (wifi_event_sta_connected_t*) event_data;
-        
-        for (int i=0; i<6; i++) {
-          printf("val:%hhx", event->bssid[i]);
-        }*/
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         //ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         //printf("got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -272,7 +278,7 @@ esp_err_t initAiThinkerCamera() {
   config.pin_reset = -1;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_XGA; //FRAMESIZE_SVGA;
+  config.frame_size = FRAMESIZE_VGA;
   config.jpeg_quality = 10;
   config.fb_count = 2;
 

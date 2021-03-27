@@ -24,10 +24,10 @@ struct FuelGauge {
   int percent;
 };
 
-enum state_enum {SLEEPING, START_CAM, RUNNING, STOP_CAM, GOING_TO_SLEEP};
+enum state_enum {SLEEPING, RUNNING, STOP_CAM, GOING_TO_SLEEP};
 uint8_t _state;
 
-enum mode_enum {NORMAL_MODE, DEBUG_MODE, REPORT_MODE};
+enum mode_enum {NORMAL_MODE, NIGHT_MODE, LIGHT_MODE};
 uint8_t _mode;
 
 Parser parser = Parser(' ');
@@ -68,7 +68,7 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Cam Actuator Lithium", "1.0");
+  sendSketchInfo("Cam Actuator Lithium", "1.1");
   present(0, S_CUSTOM);
 }
 
@@ -80,18 +80,18 @@ void receive(const MyMessage &message)
     if (parser.isEqual(0, "start") && parser.get(1) != NULL) {
       _runningTime = parser.getInt(1);
 
-      if (parser.isEqual(2, "d")) {
-        _mode = DEBUG_MODE;
-      } else if (parser.isEqual(2, "r")) {
-        _mode = REPORT_MODE;
+      if (parser.isEqual(2, "n")) {
+        _mode = NIGHT_MODE;
+      } else if (parser.isEqual(2, "l")) {
+        _mode = LIGHT_MODE;
       } else {
         _mode = NORMAL_MODE;
       }
 
       if (_state == RUNNING) {
         _stateTimer = millis();
-      } else if (_state != START_CAM) {
-        changeState(START_CAM);
+      } else {
+        changeState(RUNNING);
       }
     } else if (parser.isEqual(0, "stop")) {
       changeState(STOP_CAM);
@@ -116,10 +116,6 @@ void loop() {
       reportBatteryLevel();
       sendHeartbeat();
     }
-  } else if (_state == START_CAM) {
-    if (millis() - _stateTimer > 2000) {
-      changeState(RUNNING);
-    }
   } else if (_state == RUNNING) {
     while (esp32Serial.available()) {
         char character = esp32Serial.read();
@@ -127,6 +123,15 @@ void loop() {
 
         if (character == '\0' || character == '\n' || esp32DataCpt == 24) {
             esp32Data[esp32DataCpt] = '\0';
+
+            if (esp32DataCpt > 3 && esp32Data[0] == 'r' && esp32Data[1] == 'e' && esp32Data[2] == 'a' && esp32Data[3] == 'd' && esp32Data[4] == 'y') {
+              if (_mode == NIGHT_MODE) {
+                esp32Serial.println("gc6");
+              } else if (_mode == LIGHT_MODE) {
+                esp32Serial.println("fs8");
+              }
+            }
+
             send(msg.set(esp32Data));
             esp32DataCpt = 0;
         }
@@ -153,18 +158,10 @@ void changeState(state_enum state) {
   switch (state) {
     case SLEEPING:
       break;
-    case START_CAM:
-      startCam();
-      break;
     case RUNNING:
-      send(msg.set(F("started")));
+      startCam();
+      delay(150);
       esp32Serial.begin(9600);
-      delay(200);
-      if (_mode == DEBUG_MODE) {
-        esp32Serial.println("debug_mode");
-      } else if (_mode == REPORT_MODE) {
-        esp32Serial.println("report_mode");
-      }
       break;
     case STOP_CAM:
       esp32Serial.end();
