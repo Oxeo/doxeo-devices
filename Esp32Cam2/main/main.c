@@ -55,7 +55,7 @@ void app_main(void)
     gpio_set_direction(LED_RED, GPIO_MODE_OUTPUT);
 
     gpio_set_level(LED_RED, 1);
-    printf("init\n");
+    //printf("init\n");
     
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -74,7 +74,7 @@ void app_main(void)
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0));
     uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
 
-    printf("ready\n");
+    //printf("ready\n");
 
     while(1) {
         int len = uart_read_bytes(UART_NUM_0 , data, BUF_SIZE, 20 / portTICK_RATE_MS);
@@ -96,12 +96,6 @@ void app_main(void)
           previousMillis = esp_timer_get_time();
           gpio_set_level(LED_BLUE, 1);
           sendPhoto();
-
-          if (sendNumber == 1) {
-            sensor_t * s = esp_camera_sensor_get();
-            s->set_framesize(s, FRAMESIZE_XGA);
-          }
-
           gpio_set_level(LED_BLUE, 0);
           vTaskDelay(50 / portTICK_PERIOD_MS);
         }
@@ -134,7 +128,6 @@ void sendPhoto() {
   } else {
     printf("send error: %d\n", err);
   }
-
   
   esp_http_client_cleanup(http_client);
   esp_camera_fb_return(fb); // return the frame buffer back to be reused
@@ -278,7 +271,7 @@ esp_err_t initAiThinkerCamera() {
   config.pin_reset = -1;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA;
+  config.frame_size = FRAMESIZE_XGA;
   config.jpeg_quality = 10;
   config.fb_count = 2;
 

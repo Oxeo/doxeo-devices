@@ -35,6 +35,9 @@ MyMessage msg(0, V_CUSTOM);
 unsigned long _cpt = 0;
 unsigned long _runningTime = 0;
 unsigned long _stateTimer = 0;
+unsigned long _camStartedTimer = 0;
+boolean _transportDisable = false;
+boolean _modeSend = false;
 
 SoftwareSerial esp32Serial(ESP32_TX_PIN, ESP32_RX_PIN); // RX, TX
 char esp32Data[25];
@@ -48,7 +51,7 @@ void before() {
   pinMode(ESP32_P13_PIN, INPUT);
   pinMode(CAM_POWER_PIN, OUTPUT);
   digitalWrite(CAM_POWER_PIN, LOW);
-  
+
   //saveVoltageCorrection(0.988077859); // Measured by multimeter divided by reported
   _voltageCorrection = getVoltageCorrection();
   analogReference(INTERNAL);
@@ -118,31 +121,49 @@ void loop() {
     }
   } else if (_state == RUNNING) {
     while (esp32Serial.available()) {
-        char character = esp32Serial.read();
-        esp32Data[esp32DataCpt++] = character;
+      char character = esp32Serial.read();
+      esp32Data[esp32DataCpt++] = character;
 
-        if (character == '\0' || character == '\n' || esp32DataCpt == 24) {
-            esp32Data[esp32DataCpt] = '\0';
+      if (character == '\0' || character == '\n' || esp32DataCpt == 24) {
+        esp32Data[esp32DataCpt] = '\0';
 
-            if (esp32DataCpt > 3 && esp32Data[0] == 'r' && esp32Data[1] == 'e' && esp32Data[2] == 'a' && esp32Data[3] == 'd' && esp32Data[4] == 'y') {
-              if (_mode == NIGHT_MODE) {
-                esp32Serial.println("gc6");
-              } else if (_mode == LIGHT_MODE) {
-                esp32Serial.println("fs8");
-              }
-            }
+        /*if (esp32DataCpt > 3 && esp32Data[0] == 'r' && esp32Data[1] == 'e' && esp32Data[2] == 'a' && esp32Data[3] == 'd' && esp32Data[4] == 'y') {
+          if (_mode == NIGHT_MODE) {
+            esp32Serial.println("gc6");
+          } else if (_mode == LIGHT_MODE) {
+            esp32Serial.println("fs8");
+          }
+        }*/
 
-            send(msg.set(esp32Data));
-            esp32DataCpt = 0;
+        if (strstr(esp32DataCpt, "send 1" ) != NULL || _modeSend == false) {
+          if (_mode == NIGHT_MODE) {
+            esp32Serial.println("gc6");
+          } else if (_mode == LIGHT_MODE) {
+            esp32Serial.println("fs8");
+          }
+          
+          _modeSend = true;
         }
+
+        if (_transportDisable) {
+          transportReInitialise();
+          _transportDisable = false;
+        }
+        send(msg.set(esp32Data));
+        esp32DataCpt = 0;
+      }
     }
-    
+
     if (millis() - _stateTimer > _runningTime * 1000UL) {
       changeState(STOP_CAM);
     }
   } else if (_state == STOP_CAM) {
     if (digitalRead(ESP32_P13_PIN) == LOW || millis() - _stateTimer > 10000) {
       stopCam();
+      if (_transportDisable) {
+        transportReInitialise();
+        _transportDisable = false;
+      }
       send(msg.set(F("stopped")));
       reportBatteryLevel();
       changeState(GOING_TO_SLEEP);
@@ -160,8 +181,15 @@ void changeState(state_enum state) {
       break;
     case RUNNING:
       startCam();
-      delay(150);
+      _camStartedTimer = millis();
+      delay(50); // time to send NRF ACK before sleep
+      transportDisable();
+      _transportDisable = true;
+      //delay(150);
+      //sleep(3000);
+      //RF24_startListening();
       esp32Serial.begin(9600);
+      _modeSend = false;
       break;
     case STOP_CAM:
       esp32Serial.end();
