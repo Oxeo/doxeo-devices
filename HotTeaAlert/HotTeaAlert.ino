@@ -28,7 +28,8 @@ uint8_t _state = SLEEPING;
 unsigned long _coldCpt = 0;
 unsigned long _readyCpt = 0;
 int _mode = 1;
-int _blinkCpt = 0; 
+int _blinkCpt = 0;
+bool _blueLedOn = false;
 
 void before()
 {
@@ -109,12 +110,13 @@ void loop()
         }
       }
     } else if (_state == COLD) {
-      if (_blinkCpt % 3 == 0) {
-        digitalWrite(BLUE_LED_PIN, HIGH);
-        delay(300);
+      if (temperature < 40 && _blueLedOn) {
         digitalWrite(BLUE_LED_PIN, LOW);
+        _blueLedOn = false;
+      } else if (temperature > 40 && !_blueLedOn) {
+        digitalWrite(BLUE_LED_PIN, HIGH);
+        _blueLedOn = true;
       }
-      _blinkCpt++;
       
       _coldCpt++;
       if (_coldCpt >= 60) {  // sleeping mode after 1 minutes
@@ -182,6 +184,7 @@ void changeState(uint8_t state) {
       digitalWrite(RED_LED_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, LOW);
       digitalWrite(BLUE_LED_PIN, HIGH);
+      _blueLedOn = true;
       _coldCpt = 0;
       break;
   }
