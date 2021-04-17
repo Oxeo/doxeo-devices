@@ -80,8 +80,8 @@ void openLock() {
 void foundMatch() {
   _finger.LEDcontrol(FINGERPRINT_LED_ON, 0, FINGERPRINT_LED_BLUE);
   openLock();
-//  _finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 10);
-  //wait(2000);
+  _finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 10);
+  wait(2000);
 }
 
 void noMatch() {
@@ -115,7 +115,10 @@ void startFingerPrint() {
 }
 
 void stopFingerPrint() {
-  pinMode(FINGER_RX, INPUT);  // because _fingerSerial.end() is not working
+  // because _fingerSerial.end() is not working
+  pinMode(FINGER_TX, INPUT);
+  pinMode(FINGER_RX, INPUT);
+  
   pinMode(FINGER_POWER, INPUT);
 }
 
