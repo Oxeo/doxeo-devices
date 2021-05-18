@@ -25,6 +25,7 @@
 #define PIN_WATER_SENSOR2 3
 #define PIN_WATER_PUMP2 6
 #define PIN_LIGHT 8
+#define PIN_LIGHT2 A2
 #define PIN_ALIM_TEMPERATURE 4
 #define PIN_TEMPERATURE 5
 
@@ -34,11 +35,14 @@
 #define PUMP1_ID 1
 #define PUMP2_ID 2
 #define LIGHT_ID 3
+#define LIGHT2_ID 4
+#define RELAY_ID 5
 
 // Timer
 unsigned long pump1Timer = 0;
 unsigned long pump2Timer = 0;
 unsigned long lightTimer = 0;
+unsigned long light2Timer = 0;
 unsigned long _heartbeatTime = 0;
 
 // Temperature sensor
@@ -48,6 +52,7 @@ byte dallasSensorAddress[8];
 
 // Status
 bool lightOn;
+bool light2On;
 bool pump1On;
 bool pump2On;
 bool pump1IsRunning;
@@ -63,7 +68,8 @@ MyMessage msgTemperature(TEMPERATURE_ID, V_TEMP);
 MyMessage msgPump1(PUMP1_ID, V_CUSTOM);
 MyMessage msgPump2(PUMP2_ID, V_CUSTOM);
 MyMessage msgLight(LIGHT_ID, V_CUSTOM);
-MyMessage msgRelay(4, V_CUSTOM);
+MyMessage msgLight2(LIGHT2_ID, V_CUSTOM);
+MyMessage msgRelay(RELAY_ID, V_CUSTOM);
 
 MyMessage msgToRelay;
 unsigned long relayTimer = 0;
@@ -72,6 +78,7 @@ void before()
 {
   // init PIN
   pinMode(PIN_LIGHT, OUTPUT);
+  pinMode(PIN_LIGHT2, OUTPUT);
   pinMode(PIN_WATER_PUMP1, OUTPUT);
   pinMode(PIN_WATER_SENSOR1, INPUT_PULLUP);
   pinMode(PIN_WATER_PUMP2, OUTPUT);
@@ -79,6 +86,8 @@ void before()
 
   digitalWrite(PIN_WATER_PUMP1, LOW);
   digitalWrite(PIN_WATER_PUMP2, LOW);
+  digitalWrite(PIN_LIGHT, LOW);
+  digitalWrite(PIN_LIGHT2, LOW);
 }
 
 void setup() {
@@ -86,18 +95,20 @@ void setup() {
 
   enablePump1(0);
   enablePump2(0);
-  enableLight(5); // 5 seconds
+  enableLight(0);
+  enableLight2(0);
 }
 
 void presentation() {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Fountain", "1.2");
+  sendSketchInfo("Fountain", "1.3");
 
   // Present sensor to controller
   present(TEMPERATURE_ID, S_TEMP, "temperature");
   present(PUMP1_ID, S_CUSTOM, "pump 1");
   present(PUMP2_ID, S_CUSTOM, "pump 2");
-  present(LIGHT_ID, S_CUSTOM, "light");
+  present(LIGHT_ID, S_CUSTOM, "light 1");
+  present(LIGHT2_ID, S_CUSTOM, "light 2");
 }
 
 void receive(const MyMessage &message)
@@ -106,24 +117,29 @@ void receive(const MyMessage &message)
     String data = message.getString();
 
     if (message.sensor == PUMP1_ID) {
-      int timeSelectedMinute = parseMsg(data, '-', 0).toInt();
-      int timeOnMinute = parseMsg(data, '-', 1).toInt();
-      int timeOffMinute = parseMsg(data, '-', 2).toInt();
+      unsigned long timeSelectedMinute = parseMsg(data, '-', 0).toInt();
+      unsigned long timeOnMinute = parseMsg(data, '-', 1).toInt();
+      unsigned long timeOffMinute = parseMsg(data, '-', 2).toInt();
 
-      enablePump1(timeSelectedMinute * 60, timeOnMinute * 60, timeOffMinute * 60);
+      enablePump1(timeSelectedMinute * 60UL, timeOnMinute * 60UL, timeOffMinute * 60UL);
     }
 
     if (message.sensor == PUMP2_ID) {
-      int timeSelectedMinute = data.toInt();
-      enablePump2(timeSelectedMinute * 60);
+      unsigned long timeSelectedMinute = data.toInt();
+      enablePump2(timeSelectedMinute * 60UL);
     }
 
     if (message.sensor == LIGHT_ID) {
-      int timeSelectedMinute = data.toInt();
-      enableLight(timeSelectedMinute * 60);
+      unsigned long timeSelectedMinute = data.toInt();
+      enableLight(timeSelectedMinute * 60UL);
     }
 
-    if (message.sensor == 4) {
+    if (message.sensor == LIGHT2_ID) {
+      unsigned long timeSelectedMinute = data.toInt();
+      enableLight2(timeSelectedMinute * 60UL);
+    }
+
+    if (message.sensor == RELAY_ID) {
       relayMessage(&message);
     }
   }
@@ -137,10 +153,14 @@ void loop() {
     send(msgTemperature.set(temp, 1));
   }
 
-  if (lightOn || pump1On || pump2On) {
+  if (lightOn || light2On || pump1On || pump2On) {
 
     if (lightOn && lightTimer < millis()) {
       enableLight(0);
+    }
+
+    if (light2On && light2Timer < millis()) {
+      enableLight2(0);
     }
 
     if (pump1On && pump1Timer < millis()) {
@@ -252,6 +272,20 @@ void enableLight(unsigned long durationSecond) {
     lightTimer = 0;
     lightOn = false;
     send(msgLight.set("stopped"));
+  }
+}
+
+void enableLight2(unsigned long durationSecond) {
+  if (durationSecond > 0) {
+    digitalWrite(PIN_LIGHT2, HIGH);
+    light2Timer = millis() + durationSecond * 1000;
+    light2On = true;
+    send(msgLight2.set("started"));
+  } else {
+    digitalWrite(PIN_LIGHT2, LOW);
+    light2Timer = 0;
+    light2On = false;
+    send(msgLight2.set("stopped"));
   }
 }
 
