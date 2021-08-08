@@ -1,6 +1,8 @@
 // Enable debug prints to serial monitor
 //#define MY_DEBUG
 
+#define BOARD_V2
+
 #define MY_RADIO_RF24
 
 // Enable IRQ pin
@@ -15,9 +17,17 @@
 #define BATTERY_LEVEL_PIN A0
 #define ESP32_RX_PIN 6
 #define ESP32_TX_PIN 7
-#define ESP32_P13_PIN A1
-#define ESP32_P12_PIN A2
 #define EEPROM_VOLTAGE_CORRECTION 0
+
+#if defined(BOARD_V2)
+  #define ESP32_P12_PIN 4
+  #define ESP32_P13_PIN 8
+#endif
+
+#if defined(BOARD_V1)
+  #define ESP32_P12_PIN A2
+  #define ESP32_P13_PIN A1
+#endif
 
 struct FuelGauge {
   float voltage;
@@ -52,7 +62,7 @@ void before() {
   pinMode(CAM_POWER_PIN, OUTPUT);
   digitalWrite(CAM_POWER_PIN, LOW);
 
-  //saveVoltageCorrection(0.988077859); // Measured by multimeter divided by reported
+  //saveVoltageCorrection(0.9986876640419948); // Measured by multimeter divided by reported
   _voltageCorrection = getVoltageCorrection();
   analogReference(INTERNAL);
   getFuelGauge(); // first read is wrong
@@ -68,6 +78,13 @@ void setup() {
   _cpt = 0;
   _batteryPercent = 101;
   reportBatteryLevel();
+
+  /*
+  saveVoltageCorrection(1.0);
+  while(1) {
+    delay(3000);
+    reportBatteryLevel();
+  }*/
 }
 
 void presentation() {
@@ -127,15 +144,7 @@ void loop() {
       if (character == '\0' || character == '\n' || esp32DataCpt == 24) {
         esp32Data[esp32DataCpt] = '\0';
 
-        /*if (esp32DataCpt > 3 && esp32Data[0] == 'r' && esp32Data[1] == 'e' && esp32Data[2] == 'a' && esp32Data[3] == 'd' && esp32Data[4] == 'y') {
-          if (_mode == NIGHT_MODE) {
-            esp32Serial.println("gc6");
-          } else if (_mode == LIGHT_MODE) {
-            esp32Serial.println("fs8");
-          }
-        }*/
-
-        if (strstr(esp32DataCpt, "send 1" ) != NULL || _modeSend == false) {
+        if (strcmp (esp32DataCpt, "send 1") == 0) {
           if (_mode == NIGHT_MODE) {
             esp32Serial.println("gc6");
           } else if (_mode == LIGHT_MODE) {
@@ -185,9 +194,6 @@ void changeState(state_enum state) {
       delay(50); // time to send NRF ACK before sleep
       transportDisable();
       _transportDisable = true;
-      //delay(150);
-      //sleep(3000);
-      //RF24_startListening();
       esp32Serial.begin(9600);
       _modeSend = false;
       break;
