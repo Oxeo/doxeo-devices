@@ -1,9 +1,6 @@
 // Enable debug prints to serial monitor
 //#define MY_DEBUG
 
-// Enable REPORT_BATTERY_LEVEL to measure battery level and send changes to gateway
-#define REPORT_BATTERY_LEVEL
-
 #define MY_RADIO_RF24
 #define MY_PARENT_NODE_ID 4
 #define MY_PARENT_NODE_IS_STATIC
@@ -16,19 +13,18 @@
 #include <Servo.h>
 #include <Parser.h>
 
-#ifdef REPORT_BATTERY_LEVEL
-#include <Vcc.h>
-static uint8_t _oldBatteryPcnt = 200;  // Initialize to 200 to assure first time value will be sent.
-const float _vccMin        = 2.8;      // Minimum expected Vcc level, in Volts: Brownout at 2.8V    -> 0%
-const float _vccMax        = 2.0 * 1.6; // Maximum expected Vcc level, in Volts: 2xAA fresh Alkaline -> 100%
-const float _vccCorrection = 1.0;      // Measured Vcc by multimeter divided by reported Vcc
-static Vcc _vcc(_vccCorrection);
-#endif
-
-#define SERVO_POWER_PIN A0
-#define SERVO_PIN 3
+#define SERVO_POWER_PIN 4
+#define SERVO_PIN 5
+#define BATTERY_LEVEL_PIN A0
+#define EEPROM_VOLTAGE_CORRECTION 0
+#define EEPROM_SERVO_POS 1
 #define SERVO_UNLOCK_POS 52
 #define SERVO_LOCK_POS 147
+
+struct FuelGauge {
+  float voltage;
+  int percent;
+};
 
 enum state_enum {SLEEPING, RUNNING, GOING_TO_SLEEP};
 uint8_t _state;
@@ -45,19 +41,43 @@ MyMessage msg(0, V_CUSTOM);
 unsigned long _goingToSleepTimer;
 unsigned long _cpt = 0;
 
+float _voltageCorrection = 1;
+const int _lionTab[] = {3500, 3550, 3590, 3610, 3640, 3710, 3790, 3880, 3970, 4080, 4200};
+int _batteryPercent = 101;
+
 void before() {
-  _servoPosition = loadState(0); // Set position to last known state (using eeprom storage)
+  _servoPosition = loadState(EEPROM_SERVO_POS); // Set position to last known state (using eeprom storage)
   _servoMoving = false;
+
+  //saveVoltageCorrection(1.013333333333333); // Measured by multimeter divided by reported
+  _voltageCorrection = getVoltageCorrection();
+  analogReference(INTERNAL);
+  getFuelGauge(); // first read is wrong
+  FuelGauge gauge = getFuelGauge();
+
+  if (gauge.voltage <= 3.5) {
+    sleep(0);
+  }
 }
 
 void setup() {
   _state = SLEEPING;
+  _cpt = 0;
   pinMode(SERVO_POWER_PIN, OUTPUT);
   digitalWrite(SERVO_POWER_PIN, LOW);
+
+  _batteryPercent = 101;
+  reportBatteryLevel();
+
+  /*
+  while(1) {
+    delay(3000);
+    reportBatteryLevel();
+  }*/
 }
 
 void presentation() {
-  sendSketchInfo("Bird Feeder", "1.1");
+  sendSketchInfo("Bird Feeder", "2.0");
   present(0, S_CUSTOM);
 }
 
@@ -90,9 +110,10 @@ void loop() {
     wait(15);
     _cpt += 1;
 
-    if (_cpt % 21600UL == 0) { // 12H
+    if (_cpt == 21600) { // 6H
+      _cpt = 0;
       reportBatteryLevel();
-      changeState(GOING_TO_SLEEP);
+      sendHeartbeat();
     }
   } else if (_state == RUNNING) {
     manageServo();
@@ -163,8 +184,8 @@ inline void manageServo() {
         }
 
         // save in eeprom
-        if (loadState(0) != _servoTarget) {
-          saveState(0, _servoTarget);
+        if (loadState(EEPROM_SERVO_POS) != _servoTarget) {
+          saveState(EEPROM_SERVO_POS, _servoTarget);
         }
 
         _servo.detach();
@@ -178,22 +199,72 @@ inline void manageServo() {
   }
 }
 
-inline void reportBatteryLevel() {
-#ifdef REPORT_BATTERY_LEVEL
-  const uint8_t batteryPcnt = static_cast<uint8_t>(0.5 + _vcc.Read_Perc(_vccMin, _vccMax));
+void reportBatteryLevel() {
+  FuelGauge gauge = getFuelGauge();
 
 #ifdef MY_DEBUG
-  Serial.print(F("Vbat "));
-  Serial.print(_vcc.Read_Volts());
-  Serial.print(F("\tPerc "));
-  Serial.println(batteryPcnt);
+  Serial.print(F("Voltage: "));
+  Serial.print(gauge.voltage);
+  Serial.print(F(" ("));
+  Serial.print(gauge.percent);
+  Serial.println(F("%)"));
 #endif
 
-  // Battery readout should only go down. So report only when new value is smaller than previous one.
-  if ( batteryPcnt < _oldBatteryPcnt )
-  {
-    sendBatteryLevel(batteryPcnt);
-    _oldBatteryPcnt = batteryPcnt;
+  if (gauge.percent < _batteryPercent) {
+    String voltageMsg = "voltage-" + String(gauge.voltage) + "-" + String(gauge.percent);
+    send(msg.set(voltageMsg.c_str()));
+    sendBatteryLevel(gauge.percent);
+    _batteryPercent = gauge.percent;
   }
-#endif
+
+  if (gauge.voltage <= 3.5) {
+    powerOffServo();
+    send(msg.set(F("Battery too low: sleep")));
+    sleep(0);
+  }
+}
+
+FuelGauge getFuelGauge() {
+  FuelGauge gauge;
+  int analog = analogRead(BATTERY_LEVEL_PIN);  // 0 - 1023
+  float u2 = (analog * 1.1) / 1023.0;
+  gauge.voltage = (u2 * (470000.0 + 100000.0)) / 100000.0;
+  gauge.voltage *= _voltageCorrection;
+
+  int um = round(gauge.voltage * 1000.0);
+
+  for (byte i = 10; i >= 0; i--) {
+    if (um >= _lionTab[i]) {
+      if (i == 10) {
+        gauge.percent = 100;
+      } else {
+        gauge.percent = map(um, _lionTab[i], _lionTab[i + 1], i * 10, i * 10 + 10);
+      }
+
+      break;
+    } else {
+      gauge.percent = 0;
+    }
+  }
+
+  return gauge;
+}
+
+void saveVoltageCorrection(float value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    saveState(EEPROM_VOLTAGE_CORRECTION + i, b[i]);
+  }
+}
+
+float getVoltageCorrection() {
+  float value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = loadState(EEPROM_VOLTAGE_CORRECTION + i);
+  }
+
+  return value;
 }
