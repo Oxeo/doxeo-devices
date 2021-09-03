@@ -18,8 +18,8 @@
 #define BATTERY_LEVEL_PIN A0
 #define EEPROM_VOLTAGE_CORRECTION 0
 #define EEPROM_SERVO_POS 1
-#define SERVO_UNLOCK_POS 52
-#define SERVO_LOCK_POS 147
+#define SERVO_UNLOCK_POS 41
+#define SERVO_LOCK_POS 136
 
 struct FuelGauge {
   float voltage;
@@ -34,7 +34,7 @@ byte _servoPosition;
 byte _servoTarget;
 bool _servoMoving;
 unsigned long _servoTimeChange = 0;
-unsigned long _servoSpeed = 10;
+unsigned long _servoSpeed = 40;
 
 Parser parser = Parser(' ');
 MyMessage msg(0, V_CUSTOM);
@@ -188,6 +188,7 @@ inline void manageServo() {
           saveState(EEPROM_SERVO_POS, _servoTarget);
         }
 
+        delay(1000);
         _servo.detach();
         _servoMoving = false;
         powerOffServo();
