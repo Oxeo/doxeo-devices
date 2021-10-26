@@ -28,7 +28,7 @@ enum Status {
 MyMessage _myMsg(0, V_CUSTOM);
 RGBLed _led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 Status _status = OFF;
-unsigned long lastSendStatus = 0;
+unsigned long _lastChangeStatus = 0;
 
 void before()
 {
@@ -58,24 +58,31 @@ void receive(const MyMessage &message)
 {
   if (message.type == V_CUSTOM && message.sensor == 0) {
     String str = message.getString();
+    Status oldStatus = _status;
 
     if (str == "heat") {
       setStatus(HEAT);
-      send(_myMsg.set(F("set to heat")));
+      if (oldStatus != HEAT) {
+        send(_myMsg.set(F("set to heat")));
+      }
     } else if (str == "cool") {
       setStatus(COOL);
-      send(_myMsg.set(F("set to cool")));
+      if (oldStatus != COOL) {
+        send(_myMsg.set(F("set to cool")));
+      }
     } else if (str == "off") {
       setStatus(OFF);
-      send(_myMsg.set(F("set to off")));
+      if (oldStatus != OFF) {
+        send(_myMsg.set(F("set to off")));
+      }
     }
   }
 }
 
 void loop() {
-  if (_status == HEAT && millis() - lastSendStatus >= 3600000) {
-    send(_myMsg.set(F("heat"))); 
-    lastSendStatus = millis();
+  if (_status == HEAT && millis() - _lastChangeStatus > 7200000UL) { // 2H
+    setStatus(OFF);
+    send(_myMsg.set(F("set to off after 2h")));
   }
   
   manageHeartbeat();
@@ -102,9 +109,10 @@ void setStatus(Status status) {
       Serial.println("HEAT status");
       _led.setColor(RGBLed::RED);
       digitalWrite(RELAY, true);
-      lastSendStatus = millis();
       break;
   }
+
+  _lastChangeStatus = millis();
 }
 
 inline void manageHeartbeat() {
