@@ -10,7 +10,7 @@
 #define BUZZER 9
 
 int timeSelected = 0;
-unsigned long timeToWait[] = {60, 90, 120, 180, 300};
+unsigned long timeToWait[] = {60, 90, 120, 180, 240};
 unsigned long timer;
 int ledToBlink = 0;
 unsigned long ledBlinkTimer = 0;
@@ -38,31 +38,47 @@ void setup() {
 void loop() {
   // Button pressed
   if (digitalRead(BUTTON1) == LOW) {
-    unsigned long pressedTime = millis();
-    bool longPress = false;
-  
-    while (digitalRead(BUTTON1) == LOW) {
-      if ((millis() - pressedTime) > 1000) {
-        longPress = true;
-        Serial.println("button 1 long pressed");
+    Serial.println("button 1 pressed");
+
+    if (timer > 0) {
+      timeSelected += 1;
+
+      if (timeSelected > 4) {
+        timeSelected = 0;
       }
+
+      Serial.println("Time select to " + String(timeToWait[timeSelected]) + " secondes");
     }
-  
-    if (longPress == false) {
-      Serial.println("button 1 pressed");
 
-      if (timer > 0) {
-        timeSelected += 1;
+    digitalWrite(LED1, HIGH);
 
-        if (timeSelected > 4) {
-          timeSelected = 0;
-        }
-
-        Serial.println("Time select to " + String(timeToWait[timeSelected]) + " secondes");
-      }
-      
-      timer = millis();
+    if (timeSelected > 0) {
+      digitalWrite(LED2, HIGH);  
     }
+
+    if (timeSelected > 1) {
+      digitalWrite(LED3, HIGH);  
+    }
+
+    if (timeSelected > 2) {
+      digitalWrite(LED4, HIGH);  
+    }
+
+    if (timeSelected > 3) {
+      digitalWrite(LED5, HIGH);  
+    }
+
+    if (timeSelected == 0) {
+      digitalWrite(LED2, LOW);   
+      digitalWrite(LED3, LOW);   
+      digitalWrite(LED4, LOW);   
+      digitalWrite(LED5, LOW);
+    }
+
+    while (digitalRead(BUTTON1) == LOW);
+    delay(300);
+    
+    timer = millis();
   }
 
   // timer running
@@ -124,11 +140,21 @@ void loop() {
       digitalWrite(LED1, LOW);
       ledToBlink = 0;
 
-      for (int i= 0; i<3; i++) {
+      for (int i= 0; i<6; i++) {
         digitalWrite(BUZZER, HIGH);
-        delay(1000);
+        digitalWrite(LED1, HIGH);  
+        digitalWrite(LED2, HIGH);   
+        digitalWrite(LED3, HIGH);   
+        digitalWrite(LED4, HIGH);   
+        digitalWrite(LED5, HIGH);
+        delay(200);
         digitalWrite(BUZZER, LOW);
-        delay(500);
+        digitalWrite(LED1, LOW);
+        digitalWrite(LED2, LOW);   
+        digitalWrite(LED3, LOW);   
+        digitalWrite(LED4, LOW);   
+        digitalWrite(LED5, LOW);
+        delay(100);
       }
       
       sleepForever();
