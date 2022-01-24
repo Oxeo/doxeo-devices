@@ -50,6 +50,7 @@ void setup() {
   Serial.println("Amount of water: " + String(getAmountOfWater()) + " ml");
 
   startTimer();
+  sleepBleDevice();
 }
 
 void loop() {
@@ -68,13 +69,17 @@ void loop() {
         ble.println("batperc:" + String(battery.getPercent()));
         ble.println("frequency:" + String(getFrequency()));
         ble.println("water:" + String(getAmountOfWater()));
+        ble.println("time:" + String(_remainingTimeMinute));
       } else if (msg.startsWith("cmd+frequency=")) {
         byte frequency = parseCommand(msg, '=', 1).toInt();
         saveFrequency(frequency);
         Serial.println("Frequency: " + String(frequency));
         ble.println("frequency:" + String(frequency));
-  
         startTimer();
+        ble.println("time:" + String(_remainingTimeMinute));
+      } else if (msg.startsWith("cmd+restart")) {
+        startTimer();
+        ble.println("time:" + String(_remainingTimeMinute));
       } else if (msg.startsWith("cmd+water=")) {
         byte water = parseCommand(msg, '=', 1).toInt();
         saveAmountOfWater(water);
@@ -99,14 +104,12 @@ void loop() {
       ble.write(incomingByte);
     }
 
+    manageBleDevice();
     managePump();
-    manageLed();
   }
 
   if (_linked == false && _pumpIsOn == false) {
     if (_wakeupReason != MY_WAKE_UP_BY_TIMER) {
-      stopPump();
-      digitalWrite(BLE_WKP_PIN, HIGH); // sleep ble module
       Serial.println("go to sleep");
       delay(100);
     }
@@ -122,10 +125,12 @@ void loop() {
         _remainingTimeMinute = _waitTimeMinute;
         byte water = getAmountOfWater();
         startPump(water);
+        _wakeupReason = 100;
       }
-    } else {
+    }
+    
+    if (_wakeupReason != MY_WAKE_UP_BY_TIMER) {
       Serial.println("wake up");
-      digitalWrite(BLE_WKP_PIN, LOW); // wake up ble module
     }
   }
 }
@@ -153,13 +158,23 @@ void stopPump() {
   _pumpIsOn = false;
 }
 
-inline void manageLed() {
+void wakeupBleDevice() {
+  digitalWrite(BLE_WKP_PIN, LOW);
+  digitalWrite(LED_PIN, HIGH);
+}
+
+void sleepBleDevice() {
+  digitalWrite(BLE_WKP_PIN, HIGH);
+  digitalWrite(LED_PIN, LOW);
+}
+
+inline void manageBleDevice() {
   if (digitalRead(BLE_LINK_PIN) == HIGH && _linked == false) {
     _linked = true;
-    digitalWrite(LED_PIN, HIGH);
+    wakeupBleDevice();
   } else if (digitalRead(BLE_LINK_PIN) == LOW && _linked == true) {
     _linked = false;
-    digitalWrite(LED_PIN, LOW);
+    sleepBleDevice();
   }
 }
 
