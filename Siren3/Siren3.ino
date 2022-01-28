@@ -13,7 +13,7 @@
 #define SIREN_PIN 5
 #define POWER_PROBE_PIN A1
 #define BATTERY_LEVEL_PIN A0
-#define EEPROM_VOLTAGE_CORRECTION 0
+#define EEPROM_VOLTAGE_CORRECTION EEPROM_LOCAL_CONFIG_ADDRESS + 0 // 4 bytes storage
 
 // Debug print
 #if defined(MY_DEBUG)
@@ -25,6 +25,7 @@
 // Includes
 #include <MySensors.h>
 #include <Parser.h>
+#include "BatteryLevel.h"
 
 // Child ID
 #define CHILD_ID_SIREN 0
@@ -37,25 +38,15 @@ byte _bipNumber = 0;
 byte _sirenLevel = 100;
 
 // Others
-bool _isOnBattery = false;
 Parser parser = Parser(' ');
 unsigned long _heartbeatTime = 0;
+BatteryLevel battery(BATTERY_LEVEL_PIN, EEPROM_VOLTAGE_CORRECTION);
+bool _isOnBattery = false;
 
 // Message relay
 MyMessage msgRelay(1, V_CUSTOM);
 MyMessage msgToRelay;
 unsigned long relayTimer = 0;
-
-struct FuelGauge {
-  float voltage;
-  int percent;
-};
-
-float _voltageCorrection = 1;
-const int _lionTab[] = {3500, 3550, 3590, 3610, 3640, 3710, 3790, 3880, 3970, 4080, 4200};
-int _batteryPercent = 101;
-
-unsigned long timer = 0;
 
 void before()
 {
@@ -64,19 +55,15 @@ void before()
 
   stopSiren();
 
-  //saveVoltageCorrection(0.9848130841121495); // Measured by multimeter divided by reported
-  _voltageCorrection = getVoltageCorrection();
-  analogReference(INTERNAL);
-  getFuelGauge(); // first read is wrong
-  FuelGauge gauge = getFuelGauge();
+  //battery.saveVoltageCorrection(0.9848130841121495); // Measured by multimeter divided by reported (with voltage correction = 1.0)
+  battery.init();
+
+  transportInit(); // needed to sleep RF24 module
+  sleepIfBatteryToLow(false);
 }
 
 void setup() {
   randomSeed(analogRead(3)); // A3
-
-  _batteryPercent = 101;
-  reportBatteryLevel();
-
   send(msgSiren.set(F("system started")));
 }
 
@@ -97,6 +84,10 @@ void receive(const MyMessage &myMsg)
     } else if (parser.isEqual(0, "stop")) {
       stopSiren();
       send(msgSiren.set(F("siren stopped by user")));
+    } else if (parser.isEqual(0, "test")) {
+      startSirenSound(100);
+      delay(2000);
+      stopSirenSound();
     } else if (parser.isEqual(0, "start") && parser.get(1) != NULL && parser.get(2) != NULL) {
       startSiren(parser.getInt(1), parser.getInt(2));
       send(msgSiren.set(F("siren started")));
@@ -115,13 +106,9 @@ void receive(const MyMessage &myMsg)
 }
 
 void loop() {
-  if (millis() - timer > 60000UL) {
-    timer = millis();
-      reportBatteryLevel();
-  }
-  
   manageSiren();
   managePowerProbe();
+  manageBatteryLevel();
   manageHeartbeat();
 }
 
@@ -208,73 +195,44 @@ inline void manageHeartbeat() {
   }
 }
 
-void reportBatteryLevel() {
-  FuelGauge gauge = getFuelGauge();
-
-#ifdef MY_DEBUG
-  Serial.print(F("Voltage: "));
-  Serial.print(gauge.voltage);
-  Serial.print(F(" ("));
-  Serial.print(gauge.percent);
-  Serial.println(F("%)"));
-#endif
-
-  //if (gauge.percent < _batteryPercent) {
-    String voltageMsg = "voltage-" + String(gauge.voltage) + "-" + String(gauge.percent);
-    send(msgSiren.set(voltageMsg.c_str()));
-    sendBatteryLevel(gauge.percent);
-    _batteryPercent = gauge.percent;
-  //}
-
-  if (gauge.voltage <= 3.5) {
-    send(msgSiren.set(F("Battery too low: sleep")));
-    //sleep(0);
-  }
-}
-
-FuelGauge getFuelGauge() {
-  FuelGauge gauge;
-  int analog = analogRead(BATTERY_LEVEL_PIN);  // 0 - 1023
-  float u2 = (analog * 1.1) / 1023.0;
-  gauge.voltage = (u2 * (470000.0 + 100000.0)) / 100000.0;
-  gauge.voltage *= _voltageCorrection;
-
-  int um = round(gauge.voltage * 1000.0);
-
-  for (byte i = 10; i >= 0; i--) {
-    if (um >= _lionTab[i]) {
-      if (i == 10) {
-        gauge.percent = 100;
-      } else {
-        gauge.percent = map(um, _lionTab[i], _lionTab[i + 1], i * 10, i * 10 + 10);
-      }
-
-      break;
-    } else {
-      gauge.percent = 0;
+inline void manageBatteryLevel() {
+  static unsigned long lastCheck = 0;
+  
+  if (millis() - lastCheck > 10000UL) {
+    lastCheck = millis();
+    battery.compute();
+   
+    if (battery.hasChanged()) {
+      String msg = "battery:" + String(battery.getVoltage()) + "v (" + String(battery.getPercent()) + "%)";
+      send(msgSiren.set(msg.c_str()));
     }
-  }
 
-  return gauge;
-}
-
-void saveVoltageCorrection(float value) {
-  byte *b = (byte *)&value;
-
-  for (byte i = 0; i < sizeof(value); i++) {
-    saveState(EEPROM_VOLTAGE_CORRECTION + i, b[i]);
+    sleepIfBatteryToLow(true);
   }
 }
 
-float getVoltageCorrection() {
-  float value = 0.0;
-  byte *b = (byte *)&value;
+void sleepIfBatteryToLow(bool sendMsg) {
+  battery.compute();
+  
+  if (battery.getVoltage() <= 3.5) {
+      if (sendMsg) {
+        send(msgSiren.set("battery too low: sleep"));
+        wait(500);
+      }
+    
+      transportDisable();
+      
+      do {
+        hwSleep(60000);
+        battery.compute();
+      } while(battery.getVoltage() <= 3.6);
 
-  for (byte i = 0; i < sizeof(value); i++) {
-    *b++ = loadState(EEPROM_VOLTAGE_CORRECTION + i);
+      transportReInitialise();
+
+      if (sendMsg) {
+        send(msgSiren.set("battery ok: wakeup"));
+      }
   }
-
-  return value;
 }
 
 void relayMessage(const MyMessage *message) {
