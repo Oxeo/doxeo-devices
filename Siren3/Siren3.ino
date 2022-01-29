@@ -3,7 +3,7 @@
 #define MY_RADIO_RF24
 #define MY_RX_MESSAGE_BUFFER_FEATURE
 #define MY_RF24_IRQ_PIN (2)
-#define MY_RX_MESSAGE_BUFFER_SIZE (10)
+#define MY_RX_MESSAGE_BUFFER_SIZE (15)
 #define MY_REPEATER_FEATURE
 #define MY_RF24_PA_LEVEL (RF24_PA_MAX)
 #define MY_PARENT_NODE_ID 0
@@ -40,7 +40,7 @@ byte _sirenLevel = 100;
 // Others
 Parser parser = Parser(' ');
 unsigned long _heartbeatTime = 0;
-BatteryLevel battery(BATTERY_LEVEL_PIN, EEPROM_VOLTAGE_CORRECTION);
+BatteryLevel battery(BATTERY_LEVEL_PIN, EEPROM_VOLTAGE_CORRECTION, Lithium);
 bool _isOnBattery = false;
 
 // Message relay
@@ -113,6 +113,8 @@ void loop() {
 }
 
 inline void managePowerProbe() {
+  static unsigned long lastSend = 0;
+
   if (digitalRead(POWER_PROBE_PIN) == HIGH) {
     if (_isOnBattery) {
       send(msgSiren.set(F("on power supply")));
@@ -121,7 +123,13 @@ inline void managePowerProbe() {
   } else {
     if (!_isOnBattery) {
       send(msgSiren.set(F("on battery")));
+      lastSend = millis();
       _isOnBattery = true;
+    } else {
+      if (millis() - lastSend >= 3600000UL) {
+        send(msgSiren.set(F("on battery")));
+        lastSend = millis();
+      }
     }
   }
 }
@@ -202,7 +210,7 @@ inline void manageBatteryLevel() {
     lastCheck = millis();
     battery.compute();
    
-    if (battery.hasChanged()) {
+    if (battery.hasChanged(5)) {
       String msg = "battery:" + String(battery.getVoltage()) + "v (" + String(battery.getPercent()) + "%)";
       send(msgSiren.set(msg.c_str()));
     }
@@ -281,7 +289,7 @@ int getMessagePart(const char* message, const byte index) {
   return 0;
 }
 
-char* getPayload(const char* message) {
+const char* getPayload(const char* message) {
   byte indexCount = 0;
   
   for (byte i=0; i < strlen(message) - 1; i++) {
