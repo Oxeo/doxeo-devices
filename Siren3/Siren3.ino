@@ -5,7 +5,7 @@
 #define MY_RF24_IRQ_PIN (2)
 #define MY_RX_MESSAGE_BUFFER_SIZE (15)
 #define MY_REPEATER_FEATURE
-#define MY_RF24_PA_LEVEL (RF24_PA_MAX)
+#define MY_RF24_PA_LEVEL (RF24_PA_LOW)
 #define MY_PARENT_NODE_ID 0
 #define MY_PARENT_NODE_IS_STATIC
 
@@ -205,14 +205,19 @@ inline void manageHeartbeat() {
 
 inline void manageBatteryLevel() {
   static unsigned long lastCheck = 0;
+  static int lastBatteryPercent = 255;
   
   if (millis() - lastCheck > 10000UL) {
     lastCheck = millis();
     battery.compute();
    
-    if (battery.hasChanged(5)) {
-      String msg = "battery:" + String(battery.getVoltage()) + "v (" + String(battery.getPercent()) + "%)";
+    if ((_isOnBattery && battery.getPercent() < lastBatteryPercent) ||
+        (!_isOnBattery && battery.getPercent() > lastBatteryPercent) ||
+        lastBatteryPercent == 255)
+    {
+      String msg = "battery: " + String(battery.getVoltage()) + "v " + String(battery.getPercent()) + "%";
       send(msgSiren.set(msg.c_str()));
+      lastBatteryPercent = battery.getPercent();
     }
 
     sleepIfBatteryToLow(true);

@@ -64,7 +64,7 @@ bool BatteryLevel::hasChanged() {
 }
 
 bool BatteryLevel::hasChanged(int gap) {
-  return (_oldPercent - _percent) > gap || (_oldPercent - _percent) < gap;
+  return abs(_oldPercent - _percent) > gap;
 }
 
 void BatteryLevel::saveVoltageCorrection(float value) {
