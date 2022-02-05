@@ -64,6 +64,7 @@ void loop() {
       } else if (msg == "cmd+stop") {
         stopPump();
       } else if (msg == "cmd+data?") {
+        battery.compute();
         Serial.println("Battery level: " + String(battery.getVoltage()) + "v (" + battery.getPercent() + "%)");
         ble.println("batvol:" + String(battery.getVoltage()));
         ble.println("batperc:" + String(battery.getPercent()));
@@ -94,8 +95,12 @@ void loop() {
         delay(500);
         ble.print("AT+EXIT");
       } else if (msg == "cmd+try") {
-        byte water = getAmountOfWater();
-        startPump(water);
+        if (_pumpIsOn == false) {
+          byte water = getAmountOfWater();
+          startPump(water);
+        } else {
+          stopPump();
+        }
       }
     }
   
@@ -115,7 +120,7 @@ void loop() {
     }
 
     // Sleep until ble connected
-    _wakeupReason  = sleep(digitalPinToInterrupt(BLE_LINK_PIN), RISING, 52000); // 60 secondes
+    _wakeupReason  = sleep(digitalPinToInterrupt(BLE_LINK_PIN), RISING, 52500); // 60 secondes
 
     if (_wakeupReason == MY_WAKE_UP_BY_TIMER) {
       _remainingTimeMinute--;
