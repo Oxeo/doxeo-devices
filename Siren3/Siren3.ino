@@ -170,7 +170,7 @@ inline void manageSiren() {
   }
 }
 
-void startSirenSound(char level) {
+void startSirenSound(byte level) {
   analogWrite(SIREN_PIN, map(level, 0, 100, 0, 255));
 }
 

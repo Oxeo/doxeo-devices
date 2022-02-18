@@ -14,12 +14,11 @@ class BatteryLevel
     float getVoltage();
     int getPercent();
     void saveVoltageCorrection(float value);
+    float getVoltageCorrection();
     bool hasChanged();
     bool hasChanged(int gap);
 
   private:
-    float getVoltageCorrection();
-    
     int _pinBatteryLevel;
     float _voltageCorrection;
     uint32_t _eepromAddress;

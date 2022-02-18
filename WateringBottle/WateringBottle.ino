@@ -120,7 +120,7 @@ void loop() {
     }
 
     // Sleep until ble connected
-    _wakeupReason  = sleep(digitalPinToInterrupt(BLE_LINK_PIN), RISING, 52500); // 60 secondes
+    _wakeupReason  = sleep(digitalPinToInterrupt(BLE_LINK_PIN), RISING, 52700); // 60 secondes
 
     if (_wakeupReason == MY_WAKE_UP_BY_TIMER) {
       _remainingTimeMinute--;
