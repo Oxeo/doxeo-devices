@@ -12,21 +12,27 @@
 #define LED_PIN 9
 
 #define NUM_LEDS 30
+#define NUM_ANIMATION 1
 
-#define EEPROM_COLOR 0    // 3 byte
+#define EEPROM_COLOR 0      // 3 byte
 #define EEPROM_TIMER 4      // 1 byte
 #define EEPROM_ANIMATION 5  // 1 byte
 
 SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN); // RX, TX
 CRGB leds[NUM_LEDS];
 
-byte _linked = false;
 unsigned long _startTime = 0;
 unsigned long _timer;
 boolean _lightIsOn = false;
 byte _color[3];
 
+int _animationSelected = 0;
+unsigned long _animationTimer = 0;
+int _animationCpt = 0;
+int _animationStep = 0;
+
 void setup() {
+  randomSeed(analogRead(0));
   Serial.begin(9600);
   ble.begin(9600);
 
@@ -40,7 +46,8 @@ void setup() {
   Serial.println("Timer: " + String(getTimer()) + " hour(s)");
   Serial.println("Animation: " + String(getAnimation()));
 
-  _timer = getTimer() * 60000;
+  _timer = getTimer() * 3600000UL;
+  _animationSelected = getAnimation();
   readColor();
 
   for (int i = 0; i < NUM_LEDS; i++) {
@@ -95,6 +102,7 @@ void loop() {
     } else if (msg.startsWith("cmd+animation=")) {
       byte animation = parseCommand(msg, '=', 1).toInt();
       saveAnimation(animation);
+      _animationSelected = animation;
       Serial.println("Animation: " + String(animation));
       ble.println("animation:" + String(animation));
     } else if (msg.startsWith("cmd+name=")) {
@@ -113,10 +121,12 @@ void loop() {
     ble.write(incomingByte);
   }
 
-  manageBleDevice();
-
   if (_lightIsOn && (millis() - _startTime >= _timer)) {
     stopLight();
+  }
+
+  if (_lightIsOn && _animationSelected == 1) {
+    animation1();
   }
 }
 
@@ -125,9 +135,14 @@ void sendDataToBleDevice() {
   ble.println("status:" + status);
 
   String hexstring = "";
-  hexstring += String(_color[0], HEX);
-  hexstring += String(_color[1], HEX);
-  hexstring += String(_color[2], HEX);
+  for (int i=0; i<3; i++) {
+    if (_color[i] < 16) {
+      hexstring += "0" + String(_color[i], HEX);
+    } else {
+      hexstring += String(_color[i], HEX);
+    }
+  }
+  
   Serial.println("Color: " + hexstring);
   ble.println("color:" + hexstring);
 
@@ -142,6 +157,7 @@ void startLight() {
     delay(20);
   }
 
+  initAnimation();
   _startTime = millis();
   _lightIsOn = true;
 }
@@ -154,14 +170,6 @@ void stopLight() {
   }
 
   _lightIsOn = false;
-}
-
-inline void manageBleDevice() {
-  if (digitalRead(BLE_LINK_PIN) == HIGH && _linked == false) {
-    _linked = true;
-  } else if (digitalRead(BLE_LINK_PIN) == LOW && _linked == true) {
-    _linked = false;
-  }
 }
 
 void displayColor(String color) {
@@ -206,7 +214,7 @@ byte getAnimation() {
   byte result = EEPROM.read(EEPROM_ANIMATION);
 
   if (result == 255) {
-    result = 1;
+    result = 0;
   }
 
   return result;
@@ -241,4 +249,18 @@ String parseCommand(String data, char separator, int index)
   }
 
   return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void initAnimation() {
+  _animationTimer = millis();
+  _animationCpt = 0;
+  _animationStep = 0;
+}
+
+void animation1() {
+  if (millis() - _animationTimer >= 200UL) {
+    _animationTimer = millis();
+    leds[random(NUM_LEDS-1)].setHue( random(255));
+    FastLED.show();
+  }
 }
