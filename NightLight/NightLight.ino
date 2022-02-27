@@ -8,10 +8,10 @@
 #define BLE_DATA_PIN 2
 #define BLE_LINK_PIN 7
 #define BLE_WKP_PIN 4
-#define PIR 3
+#define BUTTON_PIN 3
 #define LED_PIN 9
 
-#define NUM_LEDS 30
+#define NUM_LEDS 6
 #define NUM_ANIMATION 1
 
 #define EEPROM_COLOR 0      // 3 byte
@@ -40,6 +40,7 @@ void setup() {
   pinMode(BLE_LINK_PIN, INPUT);
   pinMode(BLE_WKP_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
 
@@ -53,13 +54,13 @@ void setup() {
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB ( 0, 0, 255);
     FastLED.show();
-    delay(10);
+    delay(100);
   }
 
   for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
     leds[i] = CRGB (0, 0, 0);
     FastLED.show();
-    delay(10);
+    delay(100);
   }
 
   if (digitalRead(BLE_LINK_PIN) == HIGH) {
@@ -125,8 +126,31 @@ void loop() {
     stopLight();
   }
 
-  if (_lightIsOn && _animationSelected == 1) {
-    animation1();
+  if (_lightIsOn) {
+    switch (_animationSelected) {
+      case 0:
+        break;
+      case 1:
+        animation1();
+        break;
+      case 2:
+        animation2();
+        break;
+    }
+  }
+
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    if (_lightIsOn) {
+      stopLight();
+    } else {
+      startLight();
+    }
+
+    if (digitalRead(BLE_LINK_PIN) == HIGH) {
+      sendDataToBleDevice();
+    }
+
+    delay(500);
   }
 }
 
@@ -135,14 +159,14 @@ void sendDataToBleDevice() {
   ble.println("status:" + status);
 
   String hexstring = "";
-  for (int i=0; i<3; i++) {
+  for (int i = 0; i < 3; i++) {
     if (_color[i] < 16) {
       hexstring += "0" + String(_color[i], HEX);
     } else {
       hexstring += String(_color[i], HEX);
     }
   }
-  
+
   Serial.println("Color: " + hexstring);
   ble.println("color:" + hexstring);
 
@@ -258,9 +282,21 @@ void initAnimation() {
 }
 
 void animation1() {
-  if (millis() - _animationTimer >= 200UL) {
+  if (millis() - _animationTimer >= 1000UL) {
     _animationTimer = millis();
-    leds[random(NUM_LEDS-1)].setHue( random(255));
+    leds[random(NUM_LEDS - 1)].setHue( random(255));
+    FastLED.show();
+  }
+}
+
+void animation2() {
+  if (millis() - _animationTimer >= 10000UL) {
+    _animationTimer = millis();
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i].setHue( random(255));
+    }
+    
     FastLED.show();
   }
 }
