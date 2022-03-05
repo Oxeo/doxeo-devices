@@ -5,9 +5,7 @@
 
 #define BLE_RX_PIN 5
 #define BLE_TX_PIN 6
-#define BLE_DATA_PIN 2
 #define BLE_LINK_PIN 7
-#define BLE_WKP_PIN 4
 #define BUTTON_PIN 3
 #define LED_PIN 9
 
@@ -36,9 +34,7 @@ void setup() {
   Serial.begin(9600);
   ble.begin(9600);
 
-  pinMode(BLE_DATA_PIN, INPUT);
   pinMode(BLE_LINK_PIN, INPUT);
-  pinMode(BLE_WKP_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
@@ -99,7 +95,7 @@ void loop() {
       saveTimer(timer);
       Serial.println("Timer: " + String(timer));
       ble.println("timer:" + String(timer));
-      _timer = getTimer() * 60000;
+      _timer = getTimer() * 3600000UL;
     } else if (msg.startsWith("cmd+animation=")) {
       byte animation = parseCommand(msg, '=', 1).toInt();
       saveAnimation(animation);
