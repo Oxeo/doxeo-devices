@@ -10,7 +10,7 @@
 #define LED_PIN 9
 
 #define NUM_LEDS 6
-#define NUM_ANIMATION 1
+#define NUM_ANIMATION 3
 
 #define EEPROM_COLOR 0      // 3 byte
 #define EEPROM_TIMER 4      // 1 byte
@@ -40,12 +40,12 @@ void setup() {
 
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
 
-  Serial.println("Timer: " + String(getTimer()) + " hour(s)");
-  Serial.println("Animation: " + String(getAnimation()));
-
-  _timer = getTimer() * 3600000UL;
+  _timer = getTimer();
   _animationSelected = getAnimation();
   readColor();
+  
+  Serial.println("Timer: " + String(_timer) + " hour(s)");
+  Serial.println("Animation: " + String(getAnimation()));
 
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB ( 0, 0, 255);
@@ -95,7 +95,6 @@ void loop() {
       saveTimer(timer);
       Serial.println("Timer: " + String(timer));
       ble.println("timer:" + String(timer));
-      _timer = getTimer() * 3600000UL;
     } else if (msg.startsWith("cmd+animation=")) {
       byte animation = parseCommand(msg, '=', 1).toInt();
       saveAnimation(animation);
@@ -118,8 +117,9 @@ void loop() {
     ble.write(incomingByte);
   }
 
-  if (_lightIsOn && (millis() - _startTime >= _timer)) {
+  if (_lightIsOn && (millis() - _startTime >= _timer * 3600000UL)) {
     stopLight();
+    ble.println("status:off");
   }
 
   if (_lightIsOn) {
@@ -131,6 +131,9 @@ void loop() {
         break;
       case 2:
         animation2();
+        break;
+      case 3:
+        animation3();
         break;
     }
   }
@@ -166,8 +169,9 @@ void sendDataToBleDevice() {
   Serial.println("Color: " + hexstring);
   ble.println("color:" + hexstring);
 
-  ble.println("timer:" + String(getTimer()));
+  ble.println("timer:" + String(_timer));
   ble.println("animation:" + String(getAnimation()));
+  //ble.println("nbanimation:" + NUM_ANIMATION);
 }
 
 void startLight() {
@@ -248,6 +252,7 @@ void saveColor() {
 
 void saveTimer(byte value) {
   EEPROM.update(EEPROM_TIMER, value);
+  _timer = value;
 }
 
 void saveAnimation(byte value) {
@@ -294,5 +299,57 @@ void animation2() {
     }
     
     FastLED.show();
+  }
+}
+
+void animation3() {
+  if (millis() - _animationTimer >= 3000UL) {
+    _animationTimer = millis();
+    byte color = random(255);
+    byte order = random(4);
+
+    if (order == 0) {
+      leds[0].setHue(color);
+      leds[5].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[1].setHue(color);
+      leds[4].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[2].setHue(color);
+      leds[3].setHue(color);
+      FastLED.show();
+    } else if (order == 1) {
+      leds[2].setHue(color);
+      leds[3].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[1].setHue(color);
+      leds[4].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[0].setHue(color);
+      leds[5].setHue(color);
+      FastLED.show();
+    } else if (order == 2) {
+      leds[0].setHue(color);
+      leds[1].setHue(color);
+      leds[2].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[4].setHue(color);
+      FastLED.show();
+      delay(200);
+      leds[3].setHue(color);
+      leds[5].setHue(color);
+      FastLED.show();
+    } else {
+      for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i].setHue(color);
+        FastLED.show();
+        delay(200);
+      }
+    }
   }
 }
