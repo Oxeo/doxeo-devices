@@ -44,7 +44,7 @@ void setup() {
   _timer = getTimer();
   _animationSelected = getAnimation();
   readColor();
-  
+
   Serial.println("Timer: " + String(_timer) + " hour(s)");
   Serial.println("Animation: " + String(getAnimation()));
 
@@ -98,11 +98,14 @@ void loop() {
       ble.println("timer:" + String(timer));
     } else if (msg.startsWith("cmd+animation=")) {
       byte animation = parseCommand(msg, '=', 1).toInt();
-      saveAnimation(animation);
-      _animationSelected = animation;
-      initAnimation();
-      Serial.println("Animation: " + String(animation));
-      ble.println("animation:" + String(animation));
+
+      if (animation >= 0 && animation <= NUM_ANIMATION) {
+        saveAnimation(animation);
+        _animationSelected = animation;
+        initAnimation();
+        Serial.println("Animation: " + String(animation));
+        ble.println("animation:" + String(animation));
+      }
     } else if (msg.startsWith("cmd+name=")) {
       String name = parseCommand(msg, '=', 1);
       Serial.println("Name: " + String(name));
@@ -302,7 +305,7 @@ void animation2() {
     for (int i = 0; i < NUM_LEDS; i++) {
       leds[i].setHue( random(255));
     }
-    
+
     FastLED.show();
   }
 }
