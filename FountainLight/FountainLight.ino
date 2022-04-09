@@ -1,0 +1,338 @@
+#include "Arduino.h"
+#include <EEPROM.h>
+#include <SoftwareSerial.h>
+#include <FastLED.h>
+
+#define BLE_RX_PIN 5
+#define BLE_TX_PIN 6
+#define BLE_LINK_PIN 7
+#define LED_PIN 9
+
+#define NUM_LEDS 10
+#define NUM_ANIMATION 4
+
+#define EEPROM_COLOR 0      // 3 byte
+#define EEPROM_TIMER 4      // 1 byte
+#define EEPROM_ANIMATION 5  // 1 byte
+#define EEPROM_STATUS 6     // 1 byte
+
+SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN); // RX, TX
+CRGB leds[NUM_LEDS];
+
+unsigned long _startTime = 0;
+unsigned long _timer;
+boolean _lightIsOn = false;
+byte _color[3];
+
+int _animationSelected = 0;
+unsigned long _animationTimer = 0;
+int _animationCpt = 0;
+int _animationStep = 0;
+
+void setup() {
+  randomSeed(analogRead(0));
+  Serial.begin(9600);
+  ble.begin(9600);
+
+  pinMode(BLE_LINK_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+
+  FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+
+  _timer = getTimer();
+  _animationSelected = getAnimation();
+  readColor();
+  
+  Serial.println("Timer: " + String(_timer) + " hour(s)");
+  Serial.println("Animation: " + String(getAnimation()));
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB ( 0, 0, 255);
+    FastLED.show();
+    delay(40);
+  }
+
+  for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
+    leds[i] = CRGB (0, 0, 0);
+    FastLED.show();
+    delay(40);
+  }
+
+  if (digitalRead(BLE_LINK_PIN) == HIGH) {
+    sendDataToBleDevice();
+  }
+
+  bool isOn = getStatus();
+  if (isOn) {
+    startLight();
+  }
+}
+
+void loop() {
+  while (ble.available()) {
+    String msg = ble.readStringUntil('\n');
+    Serial.println("ble: " + msg);
+
+    if (msg == "cmd+start") {
+      ble.println("status:on");
+      startLight();
+      saveStatus(true);
+    } else if (msg == "cmd+stop") {
+      ble.println("status:off");
+      stopLight();
+      saveStatus(false);
+    } else if (msg == "cmd+data?") {
+      sendDataToBleDevice();
+    } else if (msg.startsWith("cmd+color=")) {
+      String color = parseCommand(msg, '=', 1);
+      displayColor(color);
+    } else if (msg.startsWith("cmd+savecolor=")) {
+      String color = parseCommand(msg, '=', 1);
+      displayColor(color);
+      saveColor();
+      Serial.println("Color saved: " + color);
+      ble.println("color:" + color);
+
+      if (!_lightIsOn) {
+        stopLight();
+      }
+    } else if (msg.startsWith("cmd+timer=")) {
+      byte timer = parseCommand(msg, '=', 1).toInt();
+      saveTimer(timer);
+      Serial.println("Timer: " + String(timer));
+      ble.println("timer:" + String(timer));
+    } else if (msg.startsWith("cmd+animation=")) {
+      byte animation = parseCommand(msg, '=', 1).toInt();
+      
+      if (animation >= 0 && animation <= NUM_ANIMATION) {
+        saveAnimation(animation);
+        _animationSelected = animation;
+        initAnimation();
+        Serial.println("Animation: " + String(animation));
+        ble.println("animation:" + String(animation));
+      }
+    } else if (msg.startsWith("cmd+name=")) {
+      String name = parseCommand(msg, '=', 1);
+      Serial.println("Name: " + String(name));
+      ble.print("+++");
+      delay(500);
+      ble.print("AT+NAME=[onl] " + name);
+      delay(500);
+      ble.print("AT+EXIT");
+    }
+  }
+
+  if (Serial.available() > 0) {
+    char incomingByte = Serial.read();
+    ble.write(incomingByte);
+  }
+
+  if (_lightIsOn && (millis() - _startTime >= _timer * 3600000UL)) {
+    stopLight();
+    ble.println("status:off");
+  }
+
+  if (_lightIsOn) {
+    switch (_animationSelected) {
+      case 0:
+        break;
+      case 1:
+        animation1();
+        break;
+      case 2:
+        animation2();
+        break;
+      case 3:
+        animation3();
+        break;
+      case 4:
+        animation4();
+        break;
+    }
+  }
+}
+
+void sendDataToBleDevice() {
+  String status =  _lightIsOn ? "on" : "off";
+  ble.println("status:" + status);
+
+  String hexstring = "";
+  for (int i = 0; i < 3; i++) {
+    if (_color[i] < 16) {
+      hexstring += "0" + String(_color[i], HEX);
+    } else {
+      hexstring += String(_color[i], HEX);
+    }
+  }
+
+  Serial.println("Color: " + hexstring);
+  ble.println("color:" + hexstring);
+
+  ble.println("timer:" + String(_timer));
+  ble.println("animation:" + String(getAnimation()));
+  ble.println("animationnb:" + String(NUM_ANIMATION));
+}
+
+void startLight() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB (_color[0], _color[1], _color[2]);
+    FastLED.show();
+    delay(20);
+  }
+
+  initAnimation();
+  _startTime = millis();
+  _lightIsOn = true;
+}
+
+void stopLight() {
+  for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
+    leds[i] = CRGB (0, 0, 0);
+    FastLED.show();
+    delay(10);
+  }
+
+  _lightIsOn = false;
+}
+
+void displayColor(String color) {
+  if (color.length() != 6) {
+    Serial.println("Color not valid!");
+  }
+
+  char firstByte[3];
+  color.substring(0, 2).toCharArray(firstByte, 3);
+  _color[0] = (byte) strtol(firstByte, NULL, 16);
+
+  color.substring(2, 4).toCharArray(firstByte, 3);
+  _color[1] = (byte) strtol(firstByte, NULL, 16);
+
+  color.substring(4, 6).toCharArray(firstByte, 3);
+  _color[2] = (byte) strtol(firstByte, NULL, 16);
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB (_color[0], _color[1], _color[2]);
+  }
+
+  FastLED.show();
+}
+
+void readColor() {
+  _color[0] = EEPROM.read(EEPROM_COLOR);
+  _color[1] = EEPROM.read(EEPROM_COLOR + 1);
+  _color[2] = EEPROM.read(EEPROM_COLOR + 2);
+}
+
+byte getTimer() {
+  byte result = EEPROM.read(EEPROM_TIMER);
+
+  if (result == 255) {
+    result = 2;
+  }
+
+  return result;
+}
+
+byte getAnimation() {
+  byte result = EEPROM.read(EEPROM_ANIMATION);
+
+  if (result == 255) {
+    result = 0;
+  }
+
+  return result;
+}
+
+bool getStatus() {
+  bool result = EEPROM.read(EEPROM_STATUS);
+  return result;
+}
+
+void saveColor() {
+  EEPROM.update(EEPROM_COLOR, _color[0]);
+  EEPROM.update(EEPROM_COLOR + 1, _color[1]);
+  EEPROM.update(EEPROM_COLOR + 2, _color[2]);
+}
+
+void saveTimer(byte value) {
+  EEPROM.update(EEPROM_TIMER, value);
+  _timer = value;
+}
+
+void saveAnimation(byte value) {
+  EEPROM.update(EEPROM_ANIMATION, value);
+}
+
+void saveStatus(bool value) {
+  EEPROM.update(EEPROM_STATUS, value);
+}
+
+String parseCommand(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex || data.charAt(i) == '\n' || data.charAt(i) == '\r') {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void initAnimation() {
+  _animationTimer = 0;
+  _animationCpt = 0;
+  _animationStep = 0;
+}
+
+void animation1() {
+  if (millis() - _animationTimer >= 1000UL || _animationTimer == 0) {
+    _animationTimer = millis();
+    leds[random(NUM_LEDS - 1)].setHue( random(255));
+    FastLED.show();
+  }
+}
+
+void animation2() {
+  if (millis() - _animationTimer >= 10000UL || _animationTimer == 0) {
+    _animationTimer = millis();
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i].setHue( random(255));
+    }
+    
+    FastLED.show();
+  }
+}
+
+void animation3() {
+  if (millis() - _animationTimer >= 60000UL || _animationTimer == 0) {
+    _animationTimer = millis();
+    byte color = random(255);
+
+    for (int i = NUM_LEDS - 1; i > -1; i--) {
+      leds[i].setHue(color);
+      FastLED.show();
+      delay(100);
+    }
+  }
+}
+
+void animation4() {
+  if (millis() - _animationTimer >= 60000UL || _animationTimer == 0) {
+    _animationTimer = millis();
+    byte color = random(255);
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i].setHue(color);
+      FastLED.show();
+      delay(100);
+      color += 3;
+    }
+  }
+}

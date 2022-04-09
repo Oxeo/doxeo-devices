@@ -16,6 +16,7 @@ uint8_t _state;
 MyMessage msg(0, V_CUSTOM);
 unsigned long irTime = 4000000000UL;
 boolean blinkLed = false;
+boolean irEvent = false;
 
 void before()
 {
@@ -37,6 +38,11 @@ void presentation()
 
 void loop()
 {
+  if (irEvent) {
+    irTime = millis();
+    irEvent = false;
+  }
+  
   if (millis() - irTime < 30000UL) {
     if (_state != RUNNING) {
       changeState(RUNNING);
@@ -85,7 +91,7 @@ void changeState(state_enum state) {
 }
 
 void irHandler() {
-  irTime = millis();
+  irEvent = true;
 }
 
 void sendWithRetry(MyMessage &message, const byte retryNumber) {
