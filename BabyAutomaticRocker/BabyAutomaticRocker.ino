@@ -20,8 +20,8 @@ byte direction = HIGH;
 
 unsigned long stepperFrequency;
 unsigned long rpmCruise = 260; // to define
-unsigned long accelerationTime = 2000; // to define
-unsigned long cruiseTime = 500;  // to define
+unsigned long accelerationTime = 3000; // to define
+unsigned long cruiseTime = 100;  // to define
 float rpmAcceleration;
 float currentRpm;
  
@@ -44,13 +44,11 @@ void setup()
 
     driver.pdn_disable(true);     // Use PDN/UART pin for communication
     driver.I_scale_analog(false); // Use internal voltage reference
-    driver.rms_current(700);      // Set driver current = 500mA, 0.5 multiplier for hold current and RSENSE = 0.11.
+    driver.rms_current(400);      // Set driver current = 500mA, 0.5 multiplier for hold current and RSENSE = 0.11.
     driver.mstep_reg_select(1);   // Microstep resolution selected by MSTEP register
     driver.microsteps(2);         // Set number of microsteps
-    driver.TPWMTHRS(50);          // When the velocity exceeds the limit set by TPWMTHRS, the driver switches to spreadCycle
+    driver.TPWMTHRS(45);          // When the velocity exceeds the limit set by TPWMTHRS, the driver switches to spreadCycle
     //driver.en_spreadCycle(false);
-    
-    //driver.VACTUAL(1000);
     driver.toff(2);               // Enable driver in software*/
 
     wakeUpMotors();
