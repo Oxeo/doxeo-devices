@@ -1,4 +1,7 @@
+#include "Arduino.h"
+#include <EEPROM.h>
 #include <TMC2208Stepper.h>
+#include <SoftwareSerial.h>
 
 #define MICROSTEP 200 * 2
 #define STEP_DIST_RATIO 1000/150 // step numbers divided by robot distance (millimeter)
@@ -14,14 +17,25 @@
 #define MOTOR2_STEP_PIN 10
 #define MOTOR2_SLP_PIN 12
 
+#define BLE_RX_PIN 5
+#define BLE_TX_PIN 6
+#define BLE_LINK_PIN 7
+#define BLE_DATA_PIN 3
+
+#define EEPROM_DISTANCE 0       // 4 bytes
+#define EEPROM_SPEED 4          // 4 bytes
+#define EEPROM_TIMER 8          // 4 bytes
+#define EEPROM_ACCELERATION 12  // 1 byte
+
 enum State_enum {FIX, ACCELERATION, CRUISE, DECELERATION};
 enum move2_enum {FORWARD, BACKWARD};
 
 TMC2208Stepper driver = TMC2208Stepper(-1, MOTOR1_UART_PIN, false);
+SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN); // RX, TX
 
 // to define
-unsigned long speed = 260;       // RPM
-float accelerationPercent = 50.0;
+unsigned long speed = 160;       // RPM
+float accelerationPercent = 10.0;
 unsigned long lapDistance = 500;    // millimeter
 
 unsigned long previousTime = micros();
@@ -38,8 +52,13 @@ int lapsNumber;
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(9600);
+  ble.begin(9600);
+
   initMotors();
+
+  pinMode(BLE_LINK_PIN, INPUT);
+  pinMode(BLE_DATA_PIN, INPUT);
 
   pinMode(MOTOR1_SLP_PIN, OUTPUT);
   pinMode(MOTOR2_SLP_PIN, OUTPUT);
@@ -60,9 +79,49 @@ void setup()
 
 void loop()
 {
-  if (lapsNumber < 2) {
+  if (lapsNumber < 1) {
     moveRobot();
   }
+
+  if (digitalRead(BLE_DATA_PIN) == HIGH) {
+    while (ble.available()) {
+      String msg = ble.readStringUntil('\n');
+      Serial.println("ble: " + msg);
+
+      if (msg == "cmd+start") {
+        ble.println("status:on");
+        lapsNumber = 0;
+      } else if (msg == "cmd+stop") {
+        ble.println("status:off");
+        lapsNumber = 100;
+      } else if (msg.startsWith("cmd+dist=")) {
+        int distance = parseCommand(msg, '=', 1).toInt();
+        saveDistance(distance);
+        Serial.println("Distance: " + String(distance));
+        ble.println("distance:" + String(distance));
+      } else if (msg.startsWith("cmd+speed=")) {
+        int speed = parseCommand(msg, '=', 1).toInt();
+        saveSpeed(speed);
+        Serial.println("Speed: " + String(speed));
+        ble.println("speed:" + String(speed));
+      } else if (msg.startsWith("cmd+accel=")) {
+        int acceleration = parseCommand(msg, '=', 1).toInt();
+        saveAcceleration(acceleration);
+        Serial.println("Acceleration: " + String(acceleration));
+        ble.println("acceleration:" + String(acceleration));
+      } else if (msg.startsWith("cmd+timer=")) {
+        byte timer = parseCommand(msg, '=', 1).toInt();
+        saveTimer(timer);
+        Serial.println("Timer: " + String(timer));
+        ble.println("timer:" + String(timer));
+      }
+    }
+  }
+
+  /*if (Serial.available() > 0) {
+    char incomingByte = Serial.read();
+    ble.write(incomingByte);
+    }*/
 }
 
 inline void moveRobot() {
@@ -213,4 +272,87 @@ void measureStepDistanceRatio() {
     digitalWrite(MOTOR2_STEP_PIN, LOW);
     delayMicroseconds(timeToWait);
   }
+}
+
+void saveDistance(float value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    EEPROM.update(EEPROM_DISTANCE + i, b[i]);
+  }
+}
+
+float getDistance() {
+  float value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = EEPROM.read(EEPROM_DISTANCE + i);
+  }
+
+  return value;
+}
+
+void saveSpeed(float value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    EEPROM.update(EEPROM_SPEED + i, b[i]);
+  }
+}
+
+float getSpeed() {
+  float value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = EEPROM.read(EEPROM_SPEED + i);
+  }
+
+  return value;
+}
+
+void saveAcceleration(byte value) {
+  EEPROM.update(EEPROM_ACCELERATION, value);
+}
+
+byte getAcceleration() {
+  byte result = EEPROM.read(EEPROM_ACCELERATION);
+
+  return result;
+}
+
+void saveTimer(float value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    EEPROM.update(EEPROM_TIMER + i, b[i]);
+  }
+}
+
+float getTimer() {
+  float value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = EEPROM.read(EEPROM_TIMER + i);
+  }
+
+  return value;
+}
+
+String parseCommand(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex || data.charAt(i) == '\n' || data.charAt(i) == '\r') {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
