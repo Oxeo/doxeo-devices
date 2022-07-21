@@ -4,8 +4,8 @@
 #include <SoftwareSerial.h>
 
 #define MICROSTEP 200 * 2
-#define STEP_DIST_RATIO 1000/150 // step numbers divided by robot distance (millimeter)
-#define ACCELERATION_FREQUENCY 100.0 // milliseconds
+#define STEP_DIST_RATIO 1000/15 // step numbers divided by robot distance (cm)
+#define ACCELERATION_FREQUENCY 10.0 // milliseconds
 #define ACCELERATION_SPEED (500.0 / (1000.0 / ACCELERATION_FREQUENCY)) // 60 RPM of acceleration in 1 second
 
 #define MOTOR1_DIR_PIN 8
@@ -22,21 +22,23 @@
 #define BLE_LINK_PIN 7
 #define BLE_DATA_PIN 3
 
-#define EEPROM_DISTANCE 0       // 4 bytes
-#define EEPROM_SPEED 4          // 4 bytes
-#define EEPROM_TIMER 8          // 4 bytes
-#define EEPROM_ACCELERATION 12  // 1 byte
+#define EEPROM_DISTANCE 0
+#define EEPROM_SPEED 4
+#define EEPROM_TIMER 8
+#define EEPROM_ACCELERATION 12
+#define EEPROM_MOTOR_CURRENT 16
 
 enum State_enum {FIX, ACCELERATION, CRUISE, DECELERATION};
-enum move2_enum {FORWARD, BACKWARD};
+enum MoveStatus_enum {FORWARD, BACKWARD};
 
 TMC2208Stepper driver = TMC2208Stepper(-1, MOTOR1_UART_PIN, false);
 SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN); // RX, TX
 
 // to define
-unsigned long speed = 160;       // RPM
-float accelerationPercent = 10.0;
-unsigned long lapDistance = 500;    // millimeter
+int speed = 160;    // RPM
+byte accelerationPercent = 10;
+int lapDistance = 50;  // cm
+int timer = 10;
 
 unsigned long previousTime = micros();
 unsigned long stateTimer = millis();
@@ -45,16 +47,25 @@ float rpmAcceleration;
 float currentSpeed; // RPM
 unsigned long stepCpt;
 unsigned long nbStepForALap;
-unsigned long nbStepToCount;
+unsigned long stepNumberToActivateDeceleration;
 uint8_t state = FIX;
-uint8_t move2;
-int lapsNumber;
+uint8_t moveStatus;
+int maxSpeed;
+bool run;
+int motorCurrent;
+unsigned long startTimer;
 
 void setup()
 {
   Serial.begin(9600);
   ble.begin(9600);
 
+  lapDistance = getDistance();
+  speed = getSpeed();
+  accelerationPercent = getAcceleration();
+  timer = getTimer();
+  motorCurrent = getMotorCurrent();
+  
   initMotors();
 
   pinMode(BLE_LINK_PIN, INPUT);
@@ -67,61 +78,42 @@ void setup()
   pinMode(MOTOR1_STEP_PIN, OUTPUT);
   pinMode(MOTOR2_STEP_PIN, OUTPUT);
 
-  wakeUpMotors();
+  sleepMotors();
 
   //stealthChop2Autotune();
   //delay(200);
 
-  lapsNumber = 0;
-  initBeforeStartingANewLap();
+  if (digitalRead(BLE_LINK_PIN) == HIGH) {
+    sendDataToBleDevice();
+  }
+
   //measureStepDistanceRatio();
 }
 
 void loop()
 {
-  if (lapsNumber < 1) {
+  if (state != FIX) {
     moveRobot();
-  }
 
-  if (digitalRead(BLE_DATA_PIN) == HIGH) {
-    while (ble.available()) {
-      String msg = ble.readStringUntil('\n');
-      Serial.println("ble: " + msg);
-
-      if (msg == "cmd+start") {
-        ble.println("status:on");
-        lapsNumber = 0;
-      } else if (msg == "cmd+stop") {
-        ble.println("status:off");
-        lapsNumber = 100;
-      } else if (msg.startsWith("cmd+dist=")) {
-        int distance = parseCommand(msg, '=', 1).toInt();
-        saveDistance(distance);
-        Serial.println("Distance: " + String(distance));
-        ble.println("distance:" + String(distance));
-      } else if (msg.startsWith("cmd+speed=")) {
-        int speed = parseCommand(msg, '=', 1).toInt();
-        saveSpeed(speed);
-        Serial.println("Speed: " + String(speed));
-        ble.println("speed:" + String(speed));
-      } else if (msg.startsWith("cmd+accel=")) {
-        int acceleration = parseCommand(msg, '=', 1).toInt();
-        saveAcceleration(acceleration);
-        Serial.println("Acceleration: " + String(acceleration));
-        ble.println("acceleration:" + String(acceleration));
-      } else if (msg.startsWith("cmd+timer=")) {
-        byte timer = parseCommand(msg, '=', 1).toInt();
-        saveTimer(timer);
-        Serial.println("Timer: " + String(timer));
-        ble.println("timer:" + String(timer));
+    if (state == FIX) {
+      if (moveStatus == FORWARD) {
+        changeMoveStatus(BACKWARD);
+        changeState(ACCELERATION);
+      } else {
+        if (run) {
+          startRobot();
+        } else {
+          sleepMotors();
+        }
       }
+    }
+
+    if ((millis() - startTimer) >= (unsigned long) timer * 60000UL) {
+      run = false;
     }
   }
 
-  /*if (Serial.available() > 0) {
-    char incomingByte = Serial.read();
-    ble.write(incomingByte);
-    }*/
+  manageBleMessage();
 }
 
 inline void moveRobot() {
@@ -137,19 +129,10 @@ inline void moveRobot() {
 
     stepCpt++;
 
-    if (stepCpt == nbStepToCount) {
+    if (stepCpt == stepNumberToActivateDeceleration) {
       changeState(DECELERATION);
-      stateTimer = millis();
-    } else if (stepCpt == nbStepForALap && state == DECELERATION) {
-      if (move2 == FORWARD) {
-        reverseGear(true);
-      } else {
-        lapsNumber++;
-        initBeforeStartingANewLap();
-      }
-
-      changeState(ACCELERATION);
-      stateTimer = millis();
+    } else if (stepCpt == nbStepForALap) {
+      changeState(FIX);
     }
   }
 
@@ -158,7 +141,7 @@ inline void moveRobot() {
       currentSpeed += rpmAcceleration;
       computeStepperFrequency();
 
-      if (currentSpeed >= speed) {
+      if (currentSpeed >= maxSpeed) {
         changeState(CRUISE);
       }
     } else if (state == DECELERATION) {
@@ -175,11 +158,17 @@ inline void moveRobot() {
   }
 }
 
-inline void initBeforeStartingANewLap() {
-  reverseGear(false);
-  nbStepForALap = lapDistance * STEP_DIST_RATIO;
+void startRobot() {
+  changeMoveStatus(FORWARD);
+  maxSpeed = speed;
+  nbStepForALap = (float) lapDistance  * STEP_DIST_RATIO;
   rpmAcceleration = ACCELERATION_SPEED * accelerationPercent / 100.0;
   changeState(ACCELERATION);
+  run = true;
+}
+
+void stopRobot() {
+  run = false;
 }
 
 void changeState(State_enum newState) {
@@ -188,20 +177,27 @@ void changeState(State_enum newState) {
       stepCpt = 0;
       currentSpeed = 1.0;
       computeStepperFrequency();
-      nbStepToCount = stepCpt + nbStepForALap / 2;
+      stepNumberToActivateDeceleration = nbStepForALap / 2;
       state = ACCELERATION;
+      stateTimer = millis();
       //Serial.println("ACCELERATION");
       break;
     case CRUISE:
-      currentSpeed = speed;
+      currentSpeed = maxSpeed;
       computeStepperFrequency();
-      nbStepToCount = stepCpt + nbStepForALap - (stepCpt * 2);
+      stepNumberToActivateDeceleration = nbStepForALap - stepCpt;
       state = CRUISE;
+      stateTimer = millis();
       //Serial.println("CRUISE");
       break;
     case DECELERATION:
       state = DECELERATION;
+      stateTimer = millis();
       //Serial.println("DECELERATION");
+      break;
+    case FIX:
+      state = FIX;
+      //Serial.println("FIX");
       break;
   }
 }
@@ -210,16 +206,71 @@ inline void computeStepperFrequency() {
   stepperFrequency = 60000000 / (currentSpeed * MICROSTEP);
 }
 
+inline void manageBleMessage() {
+  if (digitalRead(BLE_DATA_PIN) == HIGH) {
+    while (ble.available()) {
+      String msg = ble.readStringUntil('\n');
+      Serial.println("ble: " + msg);
+
+      if (msg == "cmd+start") {
+        wakeUpMotors();
+        startRobot();
+        startTimer = millis();
+        ble.println("status:on");
+      } else if (msg == "cmd+stop") {
+        stopRobot();
+        ble.println("status:off");
+      } else if (msg.startsWith("cmd+dist=")) {
+        int distance = parseCommand(msg, '=', 1).toInt();
+        saveDistance(distance);
+        Serial.println("Distance: " + String(distance));
+        ble.println("dist:" + String(distance));
+      } else if (msg.startsWith("cmd+speed=")) {
+        int speed = parseCommand(msg, '=', 1).toInt();
+        saveSpeed(speed);
+        Serial.println("Speed: " + String(speed));
+        ble.println("speed:" + String(speed));
+      } else if (msg.startsWith("cmd+accel=")) {
+        int acceleration = parseCommand(msg, '=', 1).toInt();
+
+        if (acceleration > 0 && acceleration <= 100) {
+          saveAcceleration(acceleration);
+          Serial.println("Acceleration: " + String(acceleration));
+          ble.println("accel:" + String(acceleration));
+        }
+      } else if (msg.startsWith("cmd+timer=")) {
+        byte timer = parseCommand(msg, '=', 1).toInt();
+        saveTimer(timer);
+        Serial.println("Timer: " + String(timer));
+        ble.println("timer:" + String(timer));
+      } else if (msg == "cmd+data?") {
+        sendDataToBleDevice();
+      } else if (msg.startsWith("cmd+current=")) {
+        int current = parseCommand(msg, '=', 1).toInt();
+        saveMotorCurrent(current);
+        driver.rms_current(motorCurrent);
+        Serial.println("Motor current: " + String(current));
+        ble.println("current:" + String(current));
+      }
+    }
+  }
+
+  /*if (Serial.available() > 0) {
+    char incomingByte = Serial.read();
+    ble.write(incomingByte);
+    }*/
+}
+
 void initMotors() {
   driver.beginSerial(115200);
-  driver.push();        // Resets the register to default
-  driver.pdn_disable(true);   // Use PDN/UART pin for communication
+  driver.push();    // Resets the register to default
+  driver.pdn_disable(true);  // Use PDN/UART pin for communication
   driver.I_scale_analog(false); // Use internal voltage reference
-  driver.rms_current(400);   // Set driver current to 400mA
-  driver.mstep_reg_select(1);  // Microstep resolution selected by MSTEP register
-  driver.microsteps(2);     // Set number of microsteps
-  driver.TPWMTHRS(45);     // When the velocity exceeds the limit set by TPWMTHRS, the driver switches to spreadCycle
-  driver.toff(2);        // Enable driver in software
+  driver.rms_current(motorCurrent);  // Set driver current to 400mA
+  driver.mstep_reg_select(1); // Microstep resolution selected by MSTEP register
+  driver.microsteps(2);   // Set number of microsteps
+  driver.TPWMTHRS(45);   // When the velocity exceeds the limit set by TPWMTHRS, the driver switches to spreadCycle
+  driver.toff(2);    // Enable driver in software
 }
 
 void stealthChop2Autotune() {
@@ -249,16 +300,27 @@ void wakeUpMotors() {
   delay(200);
 }
 
-void reverseGear(bool enable) {
-  if (enable) {
+void changeMoveStatus(MoveStatus_enum newStatus) {
+  if (newStatus == BACKWARD) {
     digitalWrite(MOTOR1_DIR_PIN, LOW);
     digitalWrite(MOTOR2_DIR_PIN, LOW);
-    move2 = BACKWARD;
+    moveStatus = BACKWARD;
   } else {
     digitalWrite(MOTOR1_DIR_PIN, HIGH);
     digitalWrite(MOTOR2_DIR_PIN, HIGH);
-    move2 = FORWARD;
+    moveStatus = FORWARD;
   }
+}
+
+void sendDataToBleDevice() {
+  String status =  run ? "on" : "off";
+  ble.println("status:" + status);
+
+  ble.println("dist:" + String(lapDistance));
+  ble.println("speed:" + String(speed));
+  ble.println("accel:" + String(accelerationPercent));
+  ble.println("timer:" + String(timer));
+  ble.println("current:" + String(motorCurrent));
 }
 
 void measureStepDistanceRatio() {
@@ -274,16 +336,18 @@ void measureStepDistanceRatio() {
   }
 }
 
-void saveDistance(float value) {
+void saveDistance(int value) {
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
     EEPROM.update(EEPROM_DISTANCE + i, b[i]);
   }
+
+  lapDistance = value;
 }
 
-float getDistance() {
-  float value = 0.0;
+int getDistance() {
+  int value = 0.0;
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
@@ -293,16 +357,18 @@ float getDistance() {
   return value;
 }
 
-void saveSpeed(float value) {
+void saveSpeed(int value) {
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
     EEPROM.update(EEPROM_SPEED + i, b[i]);
   }
+
+  speed = value;
 }
 
-float getSpeed() {
-  float value = 0.0;
+int getSpeed() {
+  int value = 0.0;
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
@@ -314,6 +380,7 @@ float getSpeed() {
 
 void saveAcceleration(byte value) {
   EEPROM.update(EEPROM_ACCELERATION, value);
+  accelerationPercent = value;
 }
 
 byte getAcceleration() {
@@ -322,20 +389,43 @@ byte getAcceleration() {
   return result;
 }
 
-void saveTimer(float value) {
+void saveTimer(int value) {
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
     EEPROM.update(EEPROM_TIMER + i, b[i]);
   }
+
+  timer = value;
 }
 
-float getTimer() {
-  float value = 0.0;
+int getTimer() {
+  int value = 0.0;
   byte *b = (byte *)&value;
 
   for (byte i = 0; i < sizeof(value); i++) {
     *b++ = EEPROM.read(EEPROM_TIMER + i);
+  }
+
+  return value;
+}
+
+void saveMotorCurrent(int value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    EEPROM.update(EEPROM_MOTOR_CURRENT + i, b[i]);
+  }
+
+  motorCurrent = value;
+}
+
+int getMotorCurrent() {
+  int value = 0.0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = EEPROM.read(EEPROM_MOTOR_CURRENT + i);
   }
 
   return value;
