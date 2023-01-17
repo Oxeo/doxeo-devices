@@ -1,5 +1,5 @@
 // Enable debug prints to serial monitor
-//#define MY_DEBUG
+#define MY_DEBUG
 
 #define BOARD_V2
 
@@ -20,13 +20,13 @@
 #define EEPROM_VOLTAGE_CORRECTION 0
 
 #if defined(BOARD_V2)
-  #define ESP32_P12_PIN 4
-  #define ESP32_P13_PIN 8
+#define ESP32_P12_PIN 4
+#define ESP32_P13_PIN 8
 #endif
 
 #if defined(BOARD_V1)
-  #define ESP32_P12_PIN A2
-  #define ESP32_P13_PIN A1
+#define ESP32_P12_PIN A2
+#define ESP32_P13_PIN A1
 #endif
 
 struct FuelGauge {
@@ -80,11 +80,11 @@ void setup() {
   reportBatteryLevel();
 
   /*
-  saveVoltageCorrection(1.0);
-  while(1) {
+    saveVoltageCorrection(1.0);
+    while(1) {
     delay(3000);
     reportBatteryLevel();
-  }*/
+    }*/
 }
 
 void presentation() {
@@ -137,6 +137,7 @@ void loop() {
       sendHeartbeat();
     }
   } else if (_state == RUNNING) {
+#if defined(BOARD_V1)
     while (esp32Serial.available()) {
       char character = esp32Serial.read();
       esp32Data[esp32DataCpt++] = character;
@@ -150,7 +151,7 @@ void loop() {
           } else if (_mode == LIGHT_MODE) {
             esp32Serial.println("fs8");
           }
-          
+
           _modeSend = true;
         }
 
@@ -162,6 +163,7 @@ void loop() {
         esp32DataCpt = 0;
       }
     }
+#endif
 
     if (millis() - _stateTimer > _runningTime * 1000UL) {
       changeState(STOP_CAM);
@@ -194,11 +196,15 @@ void changeState(state_enum state) {
       delay(50); // time to send NRF ACK before sleep
       transportDisable();
       _transportDisable = true;
+#if defined(BOARD_V1)
       esp32Serial.begin(9600);
+#endif
       _modeSend = false;
       break;
     case STOP_CAM:
+#if defined(BOARD_V1)
       esp32Serial.end();
+#endif
       break;
     case GOING_TO_SLEEP:
       break;
@@ -236,7 +242,9 @@ void reportBatteryLevel() {
 
   if (gauge.voltage <= 3.5) {
     stopCam();
+#if defined(BOARD_V1)
     esp32Serial.end();
+#endif
     send(msg.set(F("Battery too low: sleep")));
     sleep(0);
   }
