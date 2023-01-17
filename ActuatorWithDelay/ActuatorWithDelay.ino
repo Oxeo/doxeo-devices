@@ -13,7 +13,7 @@
 
 #include <MySensors.h>
 
-#define RELAY1 3
+#define RELAY1 5
 
 MyMessage msg(0, V_CUSTOM);
 
@@ -45,8 +45,8 @@ void presentation() {
 void receive(const MyMessage &message)
 {
   if (message.type == V_CUSTOM && message.sensor == 0) {
-    if (message.getLong() > 0 && message.getLong() < 7200) {
-      startRelay(message.getLong() * 1000);
+    if (message.getLong() > 0) {
+      startRelay(message.getLong() * 60000UL);
     } else {
       stopRelay();
     }
