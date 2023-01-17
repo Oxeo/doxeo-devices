@@ -3,8 +3,9 @@
 #include <TMC2208Stepper.h>
 #include <SoftwareSerial.h>
 
-#define MICROSTEP 200 * 2
-#define STEP_DIST_RATIO 1000/15                     // step numbers divided by robot distance (cm)
+#define STEPMOTOR 200
+#define MICROSTEP 2
+#define STEP_DIST_RATIO (500 * MICROSTEP) / 15                     // step numbers divided by robot distance (cm)
 #define ACCELERATION_FREQUENCY 10.0                   // milliseconds
 #define ACCELERATION_SPEED (500.0 / (1000.0 / ACCELERATION_FREQUENCY)) // 500 RPM of acceleration in 1 second
 
@@ -199,7 +200,7 @@ void changeState(State_enum newState) {
 }
 
 inline void computeStepperFrequency() {
- stepperFrequency = 60000000 / (currentSpeedRpm * MICROSTEP);
+ stepperFrequency = 60000000 / (currentSpeedRpm * MICROSTEP * STEPMOTOR);
 }
 
 inline void manageBleMessage() {
@@ -277,7 +278,7 @@ void initMotors() {
  driver1.I_scale_analog(false); // Use internal voltage reference
  driver1.rms_current(motorCurrent); // Set driver current to 400mA
  driver1.mstep_reg_select(1); // Microstep resolution selected by MSTEP register
- driver1.microsteps(2);  // Set number of microsteps
+ driver1.microsteps(MICROSTEP);  // Set number of microsteps
  driver1.TPWMTHRS(45);  // When the velocity exceeds the limit set by TPWMTHRS, the driver switches to spreadCycle
  driver1.toff(2);  // Enable driver in software
  
@@ -287,7 +288,7 @@ void initMotors() {
  driver2.I_scale_analog(false);
  driver2.rms_current(motorCurrent);
  driver2.mstep_reg_select(1);
- driver2.microsteps(2);
+ driver2.microsteps(MICROSTEP);
  driver2.TPWMTHRS(45);
  driver2.toff(2);
 }
@@ -296,7 +297,7 @@ void stealthChop2Autotune() {
  delay(200);
 
  unsigned long rpm = 70;
- unsigned long timeToWait = 60000000 / (rpm * MICROSTEP);
+ unsigned long timeToWait = 60000000 / (rpm * MICROSTEP * STEPMOTOR);
 
  // 300 step at velocity between 60-300 RPM
  for (int i = 0; i < 300; i++) {
@@ -322,11 +323,11 @@ void wakeUpMotors() {
 void changeMoveStatus(MoveStatus_enum newStatus) {
  if (newStatus == BACKWARD) {
   digitalWrite(MOTOR1_DIR_PIN, LOW);
-  digitalWrite(MOTOR2_DIR_PIN, LOW);
+  digitalWrite(MOTOR2_DIR_PIN, HIGH);
   moveStatus = BACKWARD;
  } else {
   digitalWrite(MOTOR1_DIR_PIN, HIGH);
-  digitalWrite(MOTOR2_DIR_PIN, HIGH);
+  digitalWrite(MOTOR2_DIR_PIN, LOW);
   moveStatus = FORWARD;
  }
 }
@@ -344,7 +345,7 @@ void sendDataToBleDevice() {
 
 void measureStepDistanceRatio() {
  unsigned long rpm = 60;
- unsigned long timeToWait = 60000000 / (rpm * MICROSTEP);
+ unsigned long timeToWait = 60000000 / (rpm * MICROSTEP * STEPMOTOR);
 
  for (int i = 0; i < 1000; i++) {
   digitalWrite(MOTOR1_STEP_PIN, HIGH);
