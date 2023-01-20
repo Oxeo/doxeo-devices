@@ -26,10 +26,12 @@
 
 #define NUM_LEDS 10
 
-#define EEPROM_COLOR 0 // 3 byte
-#define EEPROM_VOLUME 4 // 1 byte
-#define EEPROM_MUSIC 5 // 1 byte
-#define EEPROM_TIMER 6 // 1 byte
+#define EEPROM_COLOR 0       // 3 byte
+#define EEPROM_VOLUME 4      // 1 byte
+#define EEPROM_MUSIC 5       // 1 byte
+#define EEPROM_TIMER 6       // 1 byte
+#define EEPROM_MOTOR_SPEED 7 // 4 byte
+#define EEPROM_BLE_TIMER 11  // 1 byte
 
 SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN);
 
@@ -43,6 +45,8 @@ AccelStepper motor = AccelStepper(MOTOR_INTERFACE_TYPE, MOTOR_IN1_PIN, MOTOR_IN3
 byte _volume;
 boolean _animationIsOn = false;
 byte _color[3];
+int _motorSpeed;
+unsigned long _bleTimer;
 
 unsigned long _startTime = 0;
 unsigned long _timer;
@@ -80,17 +84,21 @@ void setup() {
 
   Serial.println(F("DFPlayer Mini online"));
 
-  motor.setMaxSpeed(1000);
-  motor.setSpeed(100);
-
   _volume = getVolume();
   _music = getMusic();
   _timer = getTimer();
+  _motorSpeed = getMotorSpeed();
+  _bleTimer = getBleTimer();
   readColor();
 
   Serial.println("Volume: " + String(_volume));
   Serial.println("Music: " + String(_music));
   Serial.println("Timer: " + String(_timer) + " minutes");
+  Serial.println("Motor Speed: " + String(_motorSpeed));
+  Serial.println("Ble Timer: " + String(_bleTimer) + " minutes");
+
+  motor.setMaxSpeed(1000);
+  motor.setSpeed(_motorSpeed);
 
   changeVolume(_volume);
   //dfPlayer.play(1);
@@ -167,6 +175,20 @@ void loop() {
       saveTimer(timer);
       Serial.println("Timer: " + String(timer));
       ble.println("timer:" + String(timer));
+    } else if (msg.startsWith("cmd+motor=")) {
+      int motorSpeed = parseCommand(msg, '=', 1).toInt();
+
+      if (motorSpeed >= 0 && motorSpeed < 1001) {
+        saveMotorSpeed(motorSpeed);
+        motor.setSpeed(motorSpeed);
+        Serial.println("Motor Speed: " + String(motorSpeed));
+        ble.println("motor:" + String(motorSpeed));
+      }
+    } else if (msg.startsWith("cmd+ble=")) {
+      byte bleTimer = parseCommand(msg, '=', 1).toInt();
+      saveBleTimer(bleTimer);
+      Serial.println("Ble Timer: " + String(bleTimer));
+      ble.println("ble:" + String(bleTimer));
     } else if (msg.startsWith("cmd+name=")) {
       String name = parseCommand(msg, '=', 1);
       Serial.println("Name: " + String(name));
@@ -184,7 +206,7 @@ void loop() {
   }
 
   if (_animationIsOn) {
-    if (millis() - _animationTimer >= 20UL) {
+    if (millis() - _animationTimer >= 50UL) {
       _animationTimer = millis();
 
       for (int i = 1; i < NUM_LEDS; i++) {
@@ -198,7 +220,7 @@ void loop() {
         _fadeLight++;
       }
 
-      if (_fadeLight == 0 || _fadeLight == 220) {
+      if (_fadeLight == 80 || _fadeLight == 240) {
         _fadeLightReverse = !_fadeLightReverse;
       }
 
@@ -207,17 +229,6 @@ void loop() {
 
     motor.runSpeed();
 
-    /*dfPlayerSerial.listen();
-      if (dfPlayer.available()) {
-      byte status = dfPlayer.readType();
-
-      // Play finished
-      if (status == DFPlayerPlayFinished) {
-       stopAnimation();
-      }
-      }*/
-
-    //digitalRead(DFPLAYER_BUSY) == LOW ||
     if ( (_timer != 0 && millis() - _startTime >= _timer * 60000UL)) {
       stopAnimation();
     }
@@ -243,12 +254,15 @@ void startAnimation() {
 
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB (_color[0], _color[1], _color[2]);
-    FastLED.show();
   }
+
+  leds[0].fadeLightBy(200);
+
+  FastLED.show();
 
   _animationTimer = 0;
   _startTime = millis();
-  _fadeLight = 0;
+  _fadeLight = 80;
   _fadeLightReverse = false;
   _animationIsOn = true;
 
@@ -256,13 +270,15 @@ void startAnimation() {
 }
 
 void stopAnimation() {
-  dfPlayer.pause();
+  dfPlayer.stop();
 
   for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
     leds[i] = CRGB (0, 0, 0);
     FastLED.show();
     delay(10);
   }
+
+  motor.disableOutputs();
 
   _animationIsOn = false;
   Serial.println(F("Animation stopped"));
@@ -291,6 +307,8 @@ void sendDataToBleDevice() {
   ble.println("volume:" + String(_volume));
   ble.println("music:" + String(_music));
   ble.println("timer:" + String(_timer));
+  ble.println("motor:" + String(_motorSpeed));
+  ble.println("ble:" + String(_bleTimer));
 }
 
 void displayColor(String color) {
@@ -351,6 +369,27 @@ byte getTimer() {
   return result;
 }
 
+int getMotorSpeed() {
+ int value = 0.0;
+ byte *b = (byte *)&value;
+
+ for (byte i = 0; i < sizeof(value); i++) {
+  *b++ = EEPROM.read(EEPROM_MOTOR_SPEED + i);
+ }
+
+ return value;
+}
+
+byte getBleTimer() {
+  byte result = EEPROM.read(EEPROM_BLE_TIMER);
+
+  if (result == 255) {
+    result = 0;
+  }
+
+  return result;
+}
+
 void saveColor() {
   EEPROM.update(EEPROM_COLOR, _color[0]);
   EEPROM.update(EEPROM_COLOR + 1, _color[1]);
@@ -370,6 +409,21 @@ void saveMusic(byte value) {
 void saveTimer(byte value) {
   EEPROM.update(EEPROM_TIMER, value);
   _timer = value;
+}
+
+void saveMotorSpeed(int value) {
+ byte *b = (byte *)&value;
+
+ for (byte i = 0; i < sizeof(value); i++) {
+  EEPROM.update(EEPROM_MOTOR_SPEED + i, b[i]);
+ }
+
+ _motorSpeed = value;
+}
+
+void saveBleTimer(byte value) {
+  EEPROM.update(EEPROM_BLE_TIMER, value);
+  _bleTimer = value;
 }
 
 String parseCommand(String data, char separator, int index)
