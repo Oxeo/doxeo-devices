@@ -24,6 +24,8 @@
 #define BLE_LINK_PIN 7
 #define BLE_DATA_PIN 3
 
+#define BUTTON_1 2
+
 #define EEPROM_DISTANCE 0
 #define EEPROM_SPEED 4
 #define EEPROM_TIMER 8
@@ -77,6 +79,7 @@ void setup()
  pinMode(MOTOR2_DIR_PIN, OUTPUT);
  pinMode(MOTOR1_STEP_PIN, OUTPUT);
  pinMode(MOTOR2_STEP_PIN, OUTPUT);
+ pinMode(BUTTON_1, INPUT);
 
  sleepMotors();
 
@@ -110,7 +113,51 @@ void loop()
   }
  }
 
+ if (digitalRead(BUTTON_1) == LOW) {
+    if (run) {
+      urgentStop();
+    } else {
+      delay(500);
+      unsigned long waitTime = millis();
+      while(digitalRead(BUTTON_1) == LOW);
+
+      if ((millis() - waitTime) >= 1000) {
+        start();
+      }
+    }
+    
+    delay(500);
+  }
+
  manageBleMessage();
+}
+
+void start() {
+  wakeUpMotors();
+  startRobot();
+  startTimer = millis();
+    
+  if (digitalRead(BLE_LINK_PIN) == HIGH) {
+    ble.println("status:on");
+  }
+}
+
+void stop() {
+  stopRobot();
+  
+  if (digitalRead(BLE_LINK_PIN) == HIGH) {
+    ble.println("status:off");
+  }
+}
+
+void urgentStop() {
+  stopRobot();
+  changeState(FIX);
+  sleepMotors();
+
+  if (digitalRead(BLE_LINK_PIN) == HIGH) {
+    ble.println("status:off");
+  }
 }
 
 inline void moveRobot() {
@@ -210,18 +257,12 @@ inline void manageBleMessage() {
    //Serial.println("ble: " + msg);
 
    if (msg == "cmd+start") {
-    wakeUpMotors();
-    startRobot();
-    startTimer = millis();
-    ble.println("status:on");
+     start();
    } else if (msg == "cmd+stop") {
-    stopRobot();
-    ble.println("status:off");
+     //stop();
+     urgentStop();
    } else if (msg == "cmd+brake") {
-    stopRobot();
-    changeState(FIX);
-    sleepMotors();
-    ble.println("status:off");
+    urgentStop();
    } else if (msg.startsWith("cmd+dist=")) {
     int distance = parseCommand(msg, '=', 1).toInt();
     
