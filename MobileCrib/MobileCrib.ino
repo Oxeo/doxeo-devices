@@ -56,6 +56,9 @@ unsigned long _animationTimer = 0;
 byte _fadeLight = 0;
 boolean _fadeLightReverse = false;
 
+unsigned long _bleStopTimer;
+boolean _bleStopTimerRunning;
+
 void setup() {
   randomSeed(analogRead(0));
   Serial.begin(9600);
@@ -118,6 +121,9 @@ void setup() {
   if (digitalRead(BLE_LINK_PIN) == HIGH) {
     sendDataToBleDevice();
   }
+  
+  turnOnAdvertising();
+  startBleStopTimer();
 
   Serial.println(F("Started"));
 }
@@ -132,6 +138,7 @@ void loop() {
     if (msg == "cmd+start") {
       ble.println("status:on");
       startAnimation();
+      stopBleStopTimer();
     } else if (msg == "cmd+stop") {
       ble.println("status:off");
       stopAnimation();
@@ -168,6 +175,7 @@ void loop() {
         if (_animationIsOn) {
           stopAnimation();
           startAnimation();
+          stopBleStopTimer();
         }
       }
     } else if (msg.startsWith("cmd+timer=")) {
@@ -235,10 +243,14 @@ void loop() {
   }
 
   if (digitalRead(BUTTON_PIN) == LOW) {
+    turnOnAdvertising();
+      
     if (_animationIsOn) {
       stopAnimation();
+      startBleStopTimer();
     } else {
       startAnimation();
+      stopBleStopTimer();
     }
 
     if (digitalRead(BLE_LINK_PIN) == HIGH) {
@@ -246,6 +258,12 @@ void loop() {
     }
 
     delay(500);
+  }
+  
+  if (_bleStopTimerRunning && millis() - _bleStopTimer >= _bleTimer * 60000) {
+    Serial.println(F("Ble timer reached"));
+    turnOffAdvertising();
+    _bleStopTimerRunning = false;
   }
 }
 
@@ -281,13 +299,15 @@ void stopAnimation() {
   motor.disableOutputs();
 
   _animationIsOn = false;
+  
+  startBleStopTimer();
+  
   Serial.println(F("Animation stopped"));
 }
 
 void changeVolume(byte volume) {
   byte a = map(volume, 0, 100, 0, 30);
   dfPlayer.volume(a);
-  Serial.println(a);
 }
 
 void sendDataToBleDevice() {
@@ -309,6 +329,38 @@ void sendDataToBleDevice() {
   ble.println("timer:" + String(_timer));
   ble.println("motor:" + String(_motorSpeed));
   ble.println("ble:" + String(_bleTimer));
+}
+
+void startBleStopTimer() {
+  if (_bleTimer > 0) {
+    _bleStopTimer = millis();
+    _bleStopTimerRunning = true;
+    Serial.println(F("Ble timer started"));
+  }
+}
+
+void stopBleStopTimer() {
+  _bleStopTimerRunning = false;
+  Serial.println(F("Ble timer stopped"));
+}
+
+void turnOnAdvertising() {
+  ble.print("AT+ADV=1");
+  Serial.println(F("Advertising on"));
+}
+
+void turnOffAdvertising() {
+  ble.print("+++");
+  delay(50);
+  ble.print("AT+DISCON=0");
+  delay(50);
+  ble.print("AT+DISCON=1");
+  delay(50);
+  ble.print("AT+ADV=0");
+  delay(50);
+  ble.print("AT+EXIT");
+  delay(50);
+  Serial.println(F("Advertising off"));
 }
 
 void displayColor(String color) {
