@@ -42,8 +42,10 @@ DFRobotDFPlayerMini dfPlayer;
 
 AccelStepper motor = AccelStepper(MOTOR_INTERFACE_TYPE, MOTOR_IN1_PIN, MOTOR_IN3_PIN, MOTOR_IN2_PIN, MOTOR_IN4_PIN);
 
+enum State_enum {STOPPED, LIGHT, ANIMATION};
+
 byte _volume;
-boolean _animationIsOn = false;
+uint8_t _state = STOPPED;
 byte _color[3];
 int _motorSpeed;
 unsigned long _bleTimer;
@@ -104,7 +106,6 @@ void setup() {
   motor.setSpeed(_motorSpeed);
 
   changeVolume(_volume);
-  //dfPlayer.play(1);
 
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB ( 0, 0, 255);
@@ -124,8 +125,6 @@ void setup() {
   
   turnOnAdvertising();
   startBleStopTimer();
-
-  Serial.println(F("Started"));
 }
 
 void loop() {
@@ -136,12 +135,19 @@ void loop() {
     Serial.println("ble: " + msg);
 
     if (msg == "cmd+start") {
-      ble.println("status:on");
-      startAnimation();
-      stopBleStopTimer();
+      changeMode();
+      if (_state != STOPPED) {
+        ble.println("status:on");
+      } else {
+        ble.println("status:off");
+      }
     } else if (msg == "cmd+stop") {
-      ble.println("status:off");
-      stopAnimation();
+      changeMode();
+      if (_state != STOPPED) {
+        ble.println("status:on");
+      } else {
+        ble.println("status:off");
+      }
     } else if (msg == "cmd+data?") {
       sendDataToBleDevice();
     } else if (msg.startsWith("cmd+color=")) {
@@ -153,10 +159,6 @@ void loop() {
       saveColor();
       Serial.println("Color saved: " + color);
       ble.println("color:" + color);
-
-      if (!_animationIsOn) {
-        stopAnimation();
-      }
     } else if (msg.startsWith("cmd+volume=")) {
       byte volume = parseCommand(msg, '=', 1).toInt();
       saveVolume(volume);
@@ -172,10 +174,9 @@ void loop() {
         Serial.println("Music: " + String(music));
         ble.println("music:" + String(music));
 
-        if (_animationIsOn) {
-          stopAnimation();
-          startAnimation();
-          stopBleStopTimer();
+        if (_state != STOPPED) {
+          stopAnimationMode();
+          startAnimationMode();
         }
       }
     } else if (msg.startsWith("cmd+timer=")) {
@@ -213,7 +214,11 @@ void loop() {
     ble.write(incomingByte);
   }
 
-  if (_animationIsOn) {
+  if (_state == LIGHT) {
+    if (millis() - _startTime >= 60UL * 60000UL) {
+      stopLightMode();
+    }
+  } else if (_state == ANIMATION) {
     if (millis() - _animationTimer >= 50UL) {
       _animationTimer = millis();
 
@@ -238,20 +243,12 @@ void loop() {
     motor.runSpeed();
 
     if ( (_timer != 0 && millis() - _startTime >= _timer * 60000UL)) {
-      stopAnimation();
+      stopAnimationMode();
     }
   }
 
   if (digitalRead(BUTTON_PIN) == LOW) {
-    turnOnAdvertising();
-      
-    if (_animationIsOn) {
-      stopAnimation();
-      startBleStopTimer();
-    } else {
-      startAnimation();
-      stopBleStopTimer();
-    }
+    changeMode();
 
     if (digitalRead(BLE_LINK_PIN) == HIGH) {
       sendDataToBleDevice();
@@ -267,14 +264,25 @@ void loop() {
   }
 }
 
-void startAnimation() {
+void changeMode() {
+  if (_state == STOPPED) {
+    startLightMode();
+  } else if (_state == LIGHT) {
+    stopLightMode();
+    startAnimationMode();
+  } else if (_state == ANIMATION) {
+    stopAnimationMode();
+  }
+}
+
+void startAnimationMode() {
   dfPlayer.playFolder(1, _music);
 
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB (_color[0], _color[1], _color[2]);
   }
 
-  leds[0].fadeLightBy(200);
+  leds[0].fadeLightBy(250);
 
   FastLED.show();
 
@@ -282,12 +290,12 @@ void startAnimation() {
   _startTime = millis();
   _fadeLight = 80;
   _fadeLightReverse = false;
-  _animationIsOn = true;
+  _state = ANIMATION;
 
-  Serial.println(F("Animation started"));
+  Serial.println(F("Animation mode started"));
 }
 
-void stopAnimation() {
+void stopAnimationMode() {
   dfPlayer.stop();
 
   for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
@@ -298,11 +306,37 @@ void stopAnimation() {
 
   motor.disableOutputs();
 
-  _animationIsOn = false;
+  _state = STOPPED;
   
-  startBleStopTimer();
+  Serial.println(F("Animation mode stopped"));
+}
+
+void startLightMode() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB (_color[0], _color[1], _color[2]);
+  }
+
+  leds[0] = CRGB (0, 0, 0);
+
+  FastLED.show();
+
+  _animationTimer = 0;
+  _startTime = millis();
+  _state = LIGHT;
+
+  Serial.println(F("Light mode started"));
+}
+
+void stopLightMode() {
+  for (int i = (NUM_LEDS - 1) ; i >= 0; i--) {
+    leds[i] = CRGB (0, 0, 0);
+    FastLED.show();
+    delay(10);
+  }
   
-  Serial.println(F("Animation stopped"));
+  _state = STOPPED;
+  
+  Serial.println(F("Light mode stopped"));
 }
 
 void changeVolume(byte volume) {
@@ -311,7 +345,7 @@ void changeVolume(byte volume) {
 }
 
 void sendDataToBleDevice() {
-  String status = _animationIsOn ? "on" : "off";
+  String status = _state == STOPPED ? "off" : "on";
   String hexstring = "";
 
   for (int i = 0; i < 3; i++) {
@@ -346,6 +380,8 @@ void stopBleStopTimer() {
 
 void turnOnAdvertising() {
   ble.print("AT+ADV=1");
+  delay(50);
+  ble.print("AT+RESET");
   Serial.println(F("Advertising on"));
 }
 
