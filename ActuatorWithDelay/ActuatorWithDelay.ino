@@ -14,14 +14,21 @@
 #include <MySensors.h>
 
 #define RELAY1 5
+#define CHILD_ID_LEGACY 0
+#define CHILD_ID_SWITCH 1
+#define CHILD_ID_CONFIG_DELAY 2
+#define EEPROM_DELAY 0
 
-MyMessage msg(0, V_CUSTOM);
+MyMessage msgLegacy(CHILD_ID_LEGACY, V_CUSTOM);
+MyMessage msgSwitch(CHILD_ID_SWITCH, V_STATUS);
+MyMessage msgConfigDelay(CHILD_ID_CONFIG_DELAY, V_TEXT);
 
 // Relay
 unsigned long _relayDuration = 0;
 unsigned long _relayStartTime = 0;
 bool _relayIsOn = false;
 unsigned long _heartbeatTime = 0;
+unsigned long _delayConfig = 0;
 
 void before()
 {
@@ -29,26 +36,72 @@ void before()
   pinMode(RELAY1, OUTPUT);
   
   stopRelay();
-}
 
-void setup() {
-  send(msg.set(F("started")));
+  _delayConfig = getDelay();
 }
 
 void presentation() {
-  sendSketchInfo("ActuatorWithDelay", "1.1");
+  sendSketchInfo("ActuatorWithDelay", "1.2");
+  wait(100);
 
-  // Present sensor to controller
-  present(0, S_CUSTOM);
+  // legacy child
+  present(CHILD_ID_LEGACY, S_CUSTOM, "legacy message");
+  wait(100);
+
+  // relay on/off command
+  present(CHILD_ID_SWITCH, S_BINARY, "On/off state");
+  wait(100);
+
+  // config time
+  present(CHILD_ID_CONFIG_DELAY, S_INFO, "Time delay (s)");
+  wait(100);
+}
+
+void setup() {
+  sendBatteryLevel(0);
+  send(msgLegacy.set(F("started")));
+  send(msgSwitch.set(false)); // for Home Assistant to tell it's a switch
+  send(msgConfigDelay.set((long) _delayConfig / 1000)); // for Home Assistant to tell it's a input text
 }
 
 void receive(const MyMessage &message)
 {
-  if (message.type == V_CUSTOM && message.sensor == 0) {
+  if (message.sensor == CHILD_ID_LEGACY && message.type == V_CUSTOM) {
     if (message.getLong() > 0) {
       startRelay(message.getLong() * 60000UL);
     } else {
       stopRelay();
+    }
+  } else if (message.sensor == CHILD_ID_SWITCH && message.type == V_STATUS) {
+    if (message.getBool()) {
+      startRelay(_delayConfig);
+    } else {
+      stopRelay();
+    }
+  } else if (message.sensor == CHILD_ID_CONFIG_DELAY && message.type == V_TEXT) {
+    Serial.print("Time configuration received: ");
+    const char *inputStr = message.getString();
+    Serial.println(inputStr);
+
+    char *endPtr;
+    unsigned long configTime = strtoul(inputStr, &endPtr, 10);
+
+    // If the end pointer points to the null character, the entire string was a valid number
+    if (*endPtr == '\0') {
+        Serial.print("Received valid configuration time: ");
+        Serial.println(configTime);
+
+        // Save the new delay value
+        _delayConfig = configTime * 1000UL; 
+        saveDelay(_delayConfig);
+
+        // Send message to controller to confirm valid input
+        send(msgConfigDelay.set((long) _delayConfig / 1000));
+    } else {
+        Serial.println("Received invalid configuration time");
+        
+        // Send message to controller to indicate invalid input
+        send(msgConfigDelay.set("invalid"));
     }
   }
 }
@@ -63,42 +116,47 @@ void startRelay(unsigned long duration) {
   _relayStartTime = millis();
   _relayIsOn = true;
   digitalWrite(RELAY1, true);
-  send(msg.set(F("powered on")));
+  send(msgLegacy.set(F("powered on")));
+  delay(100);
+  send(msgSwitch.set(true));
 }
 
 void stopRelay() {
   digitalWrite(RELAY1, false);
   _relayIsOn = false;
-  send(msg.set(F("powered off")));
+  send(msgLegacy.set(F("powered off")));
+  delay(100);
+  send(msgSwitch.set(false));
 }
 
 inline void manageRelay() {
-  if (_relayIsOn && millis() - _relayStartTime >= _relayDuration) {
+  if (_relayIsOn && _relayDuration > 0 && millis() - _relayStartTime >= _relayDuration) {
     stopRelay();
   }      
 }
 
 inline void manageHeartbeat() {
-  static unsigned long _heartbeatLastSend = 0;
-  static unsigned long _heartbeatWait = random(1000, 60000);
-  static unsigned long _heartbeatRetryNb = 0;
-
-  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
-    bool success = sendHeartbeat();
-
-    if (success) {
-      _heartbeatWait = 60000;
-      _heartbeatRetryNb = 0;
-    } else {
-      if (_heartbeatRetryNb < 10) {
-        _heartbeatWait = random(100, 3000);
-        _heartbeatRetryNb++;
-      } else {
-        _heartbeatWait = random(45000, 60000);
-        _heartbeatRetryNb = 0;
-      }
-    }
-    
-    _heartbeatLastSend = millis();
+  if (millis() - _heartbeatTime >= 3600000) {
+    sendHeartbeat();
+    _heartbeatTime = millis();
   }
+}
+
+void saveDelay(unsigned long value) {
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    saveState(EEPROM_DELAY + i, b[i]);
+  }
+}
+
+unsigned long getDelay() {
+  unsigned long value = 0;
+  byte *b = (byte *)&value;
+
+  for (byte i = 0; i < sizeof(value); i++) {
+    *b++ = loadState(EEPROM_DELAY + i);
+  }
+
+  return value;
 }
