@@ -39,7 +39,8 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+  // WS2812 or UCS1903 if not working
+  FastLED.addLeds<UCS1903, LED_PIN, GRB>(leds, NUM_LEDS);
 
   _timer = getTimer();
   _animationSelected = getAnimation();
