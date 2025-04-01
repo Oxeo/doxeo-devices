@@ -20,6 +20,7 @@
 
 #define DOOR_ID 0
 #define DOOR_PIN 2
+#define OPEN_STATUS LOW
 
 MyMessage msg(DOOR_ID, V_TRIPPED);
 BatteryLevel battery(INTERNAL_MEASUREMENT, EEPROM_VOLTAGE_CORRECTION, CR2032_LITHIUM);
@@ -39,7 +40,7 @@ void presentation()
   wait(500);
   sendSketchInfo("Door", "2.0");
   wait(500);
-  present(DOOR_ID, S_DOOR, "Door");
+  present(DOOR_ID, S_DOOR, "Contact (closed/open)");
 }
 
 void receive(const MyMessage &myMsg)
@@ -54,7 +55,7 @@ void loop()
 
   if (tripped != sentValue) {
     DEBUG_PRINT("tripped");
-    sendWithRetry(msg.set(tripped == HIGH), 10);
+    sendWithRetry(msg.set(tripped == OPEN_STATUS), 10);
     sentValue = tripped;
   }
 

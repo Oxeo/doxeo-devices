@@ -91,8 +91,8 @@ void setup() {
 }
 
 void presentation() {
-  sendSketchInfo("Keypad Siren", "1.0");
-  present(0, S_CUSTOM);
+  sendSketchInfo("Keypad Siren", "1.1");
+  present(0, S_CUSTOM, "Keypad");
 }
 
 void loop() {
@@ -107,6 +107,8 @@ void loop() {
     if (_state == NOMINAL) {
       if (_keyboardPosition == 1 && key == '#') {
         send(msg.set(F("#")));
+        delay(300);
+        send(msg.set(F("released")));
       }
       
       if (key == _password[_keyboardPosition]) {
@@ -124,7 +126,8 @@ void loop() {
           DEBUG_PRINT(F("Correct password entered!"));
           digitalWrite(GREEN_LED, HIGH);
           send(msg.set(F("ok")));
-          delay(200);
+          delay(300);
+          send(msg.set(F("released")));
           digitalWrite(GREEN_LED, LOW);
           _keyboardInterruptTime -= 60000;
         } else {

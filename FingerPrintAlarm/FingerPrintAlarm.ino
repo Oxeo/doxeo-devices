@@ -51,7 +51,7 @@ void setup() {
 
 void presentation() {
   sendSketchInfo("Fingerprint Alarm", "1.0");
-  present(0, S_CUSTOM);
+  present(0, S_CUSTOM, "Fingerprint");
 }
 
 void receive(const MyMessage &message)
@@ -142,11 +142,19 @@ void foundMatch() {
     wait(500, _customMsg.getCommand(), _customMsg.type);
 
     if (_successMsgReceived) {
+      delay(300);
+      send(_customMsg.set(F("released")));
+      delay(500);
+
       _finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_BLUE, 10);
       wait(2000);
       return;
     }
   }
+
+  delay(300);
+  send(_customMsg.set(F("released")));
+  delay(500);
 
   _finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 10);
   wait(2000);
@@ -155,6 +163,8 @@ void foundMatch() {
 void noMatch() {
   _finger.LEDcontrol(FINGERPRINT_LED_FLASHING, 25, FINGERPRINT_LED_RED, 10);
   send(_customMsg.set(F("no match")));
+  delay(300);
+  send(_customMsg.set(F("released")));
   wait(2000);
 }
 
