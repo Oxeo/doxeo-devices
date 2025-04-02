@@ -7,8 +7,8 @@
 #define MY_RADIO_RF24
 
 // Enable IRQ pin
-//#define MY_RX_MESSAGE_BUFFER_FEATURE
-//#define MY_RF24_IRQ_PIN (2)
+// #define MY_RX_MESSAGE_BUFFER_FEATURE
+// #define MY_RF24_IRQ_PIN (2)
 
 // RF24 PA level
 #define MY_RF24_PA_LEVEL (RF24_PA_HIGH)
@@ -29,15 +29,20 @@
 #define SERVO2_UNLOCK_POS 180
 #define SERVO2_LOCK_POS 0
 
-#define PASSWORD_LENGTH 10 // + 1 for then end of string (0)
+#define PASSWORD_LENGTH 10  // + 1 for then end of string (0)
 #define BUFFER_SIZE 100
 
 #define EEPROM_PASSWORD_POS 10
 #define EEPROM_SERVO1_POS 0
 #define EEPROM_SERVO2_POS 1
 
-MyMessage msg(1, V_CUSTOM);
-SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN); // RX, TX
+#define CHILD_ID_LOCK_LEGACY 0
+#define CHILD_ID_INFO 1
+#define CHILD_ID_LOCK 2
+
+MyMessage msgInfo(CHILD_ID_INFO, V_CUSTOM);
+MyMessage msgLock(CHILD_ID_LOCK, V_STATUS);
+SoftwareSerial ble(BLE_TX_PIN, BLE_RX_PIN);  // RX, TX
 
 Servo _servo1;
 Servo _servo2;
@@ -52,10 +57,9 @@ char _password[PASSWORD_LENGTH];
 char _serialBuffer[BUFFER_SIZE];
 char _bleBuffer[BUFFER_SIZE];
 
-void before()
-{
-  _servo1_position = loadState(EEPROM_SERVO1_POS); // Set position to last known state (using eeprom storage)
-  _servo2_position = loadState(EEPROM_SERVO2_POS); // Set position to last known state (using eeprom storage)
+void before() {
+  _servo1_position = loadState(EEPROM_SERVO1_POS);  // Set position to last known state (using eeprom storage)
+  _servo2_position = loadState(EEPROM_SERVO2_POS);  // Set position to last known state (using eeprom storage)
   _action = false;
 
   initPasswordValue();
@@ -70,23 +74,30 @@ void before()
   }
 }
 
+void presentation() {
+  sendSketchInfo("GarageActuator", "1.1");
+
+  present(CHILD_ID_LOCK_LEGACY, S_BINARY, "Lock/unlock legacy");
+  present(CHILD_ID_INFO, S_CUSTOM, "Info");
+  present(CHILD_ID_LOCK, S_BINARY, "Lock/unlock");
+}
+
 void setup() {
-  randomSeed(analogRead(1)); // A1
+  randomSeed(analogRead(1));  // A1
+  send(msgLock.set(isLocked()));
   ble.begin(9600);
 }
 
-void presentation() {
-  // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("GarageActuator", "1.0");
-
-  // Present sensor to controller
-  present(0, S_BINARY);
-  present(1, S_CUSTOM);
-}
-
-void receive(const MyMessage &message)
-{
-  if (message.type == V_STATUS && message.sensor == 0) {
+void receive(const MyMessage &message) {
+  if (message.sensor == CHILD_ID_LOCK_LEGACY && message.type == V_STATUS) {
+    if (message.getBool()) {
+      Serial.println("lock cmd received");
+      lock();
+    } else {
+      Serial.println("unlock cmd received");
+      unlock();
+    }
+  } else if (message.sensor == CHILD_ID_LOCK && message.type == V_STATUS) {
     if (message.getBool()) {
       Serial.println("lock cmd received");
       lock();
@@ -101,13 +112,13 @@ inline void manageServo() {
   if (_action && millis() - _timeOfLastChange > 5) {
     // start servo 1
     if (_servo1_target != _servo1_position && !_servo1.attached() && !_servo2.attached()) {
-      send(msg.set(F("moving servo 1...")));
+      send(msgInfo.set(F("moving servo 1...")));
       _servo1.attach(SERVO1_PIN);
     }
 
     // start servo 2
     if (_servo2_target != _servo2_position && !_servo1.attached() && !_servo2.attached()) {
-      send(msg.set(F("moving servo 2...")));
+      send(msgInfo.set(F("moving servo 2...")));
       _servo2.attach(SERVO2_PIN);
     }
 
@@ -121,9 +132,9 @@ inline void manageServo() {
         _servo1.write(_servo1_position);
       } else {
         if (_servo1_target == SERVO1_UNLOCK_POS) {
-          send(msg.set(F("servo 1 unlocked")));
+          send(msgInfo.set(F("servo 1 unlocked")));
         } else {
-          send(msg.set(F("servo 1 locked")));
+          send(msgInfo.set(F("servo 1 locked")));
         }
 
         // save in eeprom
@@ -143,9 +154,9 @@ inline void manageServo() {
         _servo2.write(_servo2_position);
       } else {
         if (_servo2_target == SERVO2_UNLOCK_POS) {
-          send(msg.set(F("servo 2 unlocked")));
+          send(msgInfo.set(F("servo 2 unlocked")));
         } else {
-          send(msg.set(F("servo 2 locked")));
+          send(msgInfo.set(F("servo 2 locked")));
         }
 
         // save in eeprom
@@ -160,10 +171,10 @@ inline void manageServo() {
 
       if (_servo1_target == SERVO1_UNLOCK_POS) {
         powerOffLed();
-        send(msg.set(F("Unlocked")));
+        send(msgInfo.set(F("Unlocked")));
       } else {
         powerOnLed();
-        send(msg.set(F("Locked")));
+        send(msgInfo.set(F("Locked")));
       }
     }
 
@@ -219,7 +230,7 @@ void loop() {
 inline void manageBleLink() {
   static bool linked = false;
   static unsigned long timer = 0;
-  
+
   if (digitalRead(BLE_LINK_PIN) == HIGH && linked == false) {
     linked = true;
     timer = millis();
@@ -250,27 +261,11 @@ void disconnectBle() {
 }
 
 inline void manageHeartbeat() {
-  static unsigned long _heartbeatLastSend = 0;
-  static unsigned long _heartbeatWait = random(1000, 60000);
-  static unsigned long _heartbeatRetryNb = 0;
+  static unsigned long heartbeatTime = 0;
 
-  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
-    bool success = sendHeartbeat();
-
-    if (success) {
-      _heartbeatWait = 60000;
-      _heartbeatRetryNb = 0;
-    } else {
-      if (_heartbeatRetryNb < 10) {
-        _heartbeatWait = random(100, 3000);
-        _heartbeatRetryNb++;
-      } else {
-        _heartbeatWait = random(45000, 60000);
-        _heartbeatRetryNb = 0;
-      }
-    }
-
-    _heartbeatLastSend = millis();
+  if (millis() - heartbeatTime >= 3600000) {
+    sendHeartbeat();
+    heartbeatTime = millis();
   }
 }
 
@@ -329,7 +324,7 @@ void initPasswordValue() {
   Serial.println(_password);
 }
 
-void savePassword(const char* password) {
+void savePassword(const char *password) {
   if (strlen(password) > PASSWORD_LENGTH - 1) {
     Serial.println("Password too long");
   } else {
@@ -337,7 +332,7 @@ void savePassword(const char* password) {
       if (i < strlen(password)) {
         _password[i] = password[i];
       } else {
-        _password[i] = 0; // end string
+        _password[i] = 0;  // end string
       }
 
       saveState(EEPROM_PASSWORD_POS + i, _password[i]);
@@ -356,13 +351,13 @@ inline bool serialDataAvailable() {
       _serialBuffer[cpt] = Serial.read();
 
       if (cpt > BUFFER_SIZE - 1 || _serialBuffer[cpt] == '\n') {
-        _serialBuffer[cpt] = 0; // end string
+        _serialBuffer[cpt] = 0;  // end string
         break;
       } else {
         unsigned long timer = millis();
         while (!Serial.available() && (millis() - timer < 1000));
         cpt++;
-        _serialBuffer[cpt] = 0; // end string
+        _serialBuffer[cpt] = 0;  // end string
       }
     }
 
@@ -371,7 +366,6 @@ inline bool serialDataAvailable() {
     return false;
   }
 }
-
 
 inline bool bleDataAvailable() {
   if (ble.available()) {
@@ -381,13 +375,13 @@ inline bool bleDataAvailable() {
       _bleBuffer[cpt] = ble.read();
 
       if (cpt > BUFFER_SIZE - 1 || _bleBuffer[cpt] == '\n') {
-        _bleBuffer[cpt] = 0; // end string
+        _bleBuffer[cpt] = 0;  // end string
         break;
       } else {
         unsigned long timer = millis();
         while (!ble.available() && (millis() - timer < 1000));
         cpt++;
-        _bleBuffer[cpt] = 0; // end string
+        _bleBuffer[cpt] = 0;  // end string
       }
     }
 
@@ -397,8 +391,7 @@ inline bool bleDataAvailable() {
   }
 }
 
-bool startWith(char *str, char *sfind)
-{
+bool startWith(char *str, char *sfind) {
   if (strlen(sfind) > strlen(str)) {
     return false;
   }
@@ -412,8 +405,7 @@ bool startWith(char *str, char *sfind)
   return true;
 }
 
-bool equal(char *str, char *sfind)
-{
+bool equal(char *str, char *sfind) {
   if (strlen(sfind) != strlen(str)) {
     return false;
   }
