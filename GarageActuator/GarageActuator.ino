@@ -172,9 +172,11 @@ inline void manageServo() {
       if (_servo1_target == SERVO1_UNLOCK_POS) {
         powerOffLed();
         send(msgInfo.set(F("Unlocked")));
+        send(msgLock.set(false));
       } else {
         powerOnLed();
         send(msgInfo.set(F("Locked")));
+        send(msgLock.set(true));
       }
     }
 

@@ -19,19 +19,22 @@
 #define GREEN_LED A1
 #define BLUE_LED A2
 
+#define CHILD_ID_START_STOP_LEGACY 0
+#define CHILD_ID_START_STOP 1
+
 enum Status {
   OFF,
   COOL,
   HEAT
 };
 
-MyMessage _myMsg(0, V_CUSTOM);
+MyMessage _msgLegacy(CHILD_ID_START_STOP_LEGACY, V_CUSTOM);
+MyMessage _msgStartStop(CHILD_ID_START_STOP, V_STATUS);
 RGBLed _led(RED_LED, GREEN_LED, BLUE_LED, COMMON_CATHODE);
 Status _status = OFF;
 unsigned long _lastChangeStatus = 0;
 
-void before()
-{
+void before() {
   // init PIN
   pinMode(RELAY, OUTPUT);
 
@@ -43,48 +46,58 @@ void before()
   }
 }
 
-void setup() {
-  send(_myMsg.set(F("started")));
-}
-
 void presentation() {
   sendSketchInfo("HeatingSystem", "1.0");
 
-  // Present sensor to controller
-  present(0, S_CUSTOM);
+  present(CHILD_ID_START_STOP_LEGACY, S_CUSTOM, "Legacy");
+  present(CHILD_ID_START_STOP, S_BINARY, "Start/Stop heater");
 }
 
-void receive(const MyMessage &message)
-{
-  if (message.type == V_CUSTOM && message.sensor == 0) {
+void setup() {
+  send(_msgLegacy.set(F("started")));
+  send(_msgStartStop.set(_status == HEAT));
+}
+
+void receive(const MyMessage &message) {
+  if (message.sensor == CHILD_ID_START_STOP_LEGACY && message.type == V_CUSTOM) {
     String str = message.getString();
     Status oldStatus = _status;
 
     if (str == "heat") {
       setStatus(HEAT);
       if (oldStatus != HEAT) {
-        send(_myMsg.set(F("set to heat")));
+        send(_msgLegacy.set(F("set to heat")));
+        send(_msgStartStop.set(true));
       }
     } else if (str == "cool") {
       setStatus(COOL);
       if (oldStatus != COOL) {
-        send(_myMsg.set(F("set to cool")));
+        send(_msgLegacy.set(F("set to cool")));
+        send(_msgStartStop.set(false));
       }
     } else if (str == "off") {
       setStatus(OFF);
       if (oldStatus != OFF) {
-        send(_myMsg.set(F("set to off")));
+        send(_msgLegacy.set(F("set to off")));
+        send(_msgStartStop.set(false));
       }
+    }
+  } else if (message.sensor == CHILD_ID_START_STOP && message.type == V_STATUS) {
+    if (message.getBool()) {
+      setStatus(HEAT);
+    } else {
+      setStatus(OFF);
     }
   }
 }
 
 void loop() {
-  if (_status == HEAT && millis() - _lastChangeStatus > 7200000UL) { // 2H
+  if (_status == HEAT && millis() - _lastChangeStatus > 7200000UL) {  // 2H
     setStatus(OFF);
-    send(_myMsg.set(F("set to off after 2h")));
+    send(_msgLegacy.set(F("set to off after 2h")));
+    send(_msgStartStop.set(false));
   }
-  
+
   manageHeartbeat();
 }
 
@@ -117,25 +130,9 @@ void setStatus(Status status) {
 
 inline void manageHeartbeat() {
   static unsigned long lastSend = 0;
-  static unsigned long waitTime = random(1000, 60000);
-  static unsigned long retryNb = 0;
 
-  if (millis() - lastSend >= waitTime) {
-    bool success = sendHeartbeat();
-
-    if (success) {
-      waitTime = 60000;
-      retryNb = 0;
-    } else {
-      if (retryNb < 10) {
-        waitTime = random(100, 3000);
-        retryNb++;
-      } else {
-        waitTime = random(45000, 60000);
-        retryNb = 0;
-      }
-    }
-    
+  if (millis() - lastSend >= 3600000) {
+    sendHeartbeat();
     lastSend = millis();
   }
 }
