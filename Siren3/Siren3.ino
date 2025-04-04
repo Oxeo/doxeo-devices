@@ -284,8 +284,9 @@ inline void manageBatteryLevel() {
     if ((_isOnBattery && battery.getPercent() < lastBatteryPercent) ||
         (!_isOnBattery && battery.getPercent() > lastBatteryPercent) ||
         lastBatteryPercent == 255) {
-      String msg = "battery: " + String(battery.getVoltage()) + "v " + String(battery.getPercent()) + "%";
-      send(msgSirenLegacy.set(msg.c_str()));
+      //String msg = "battery: " + String(battery.getVoltage()) + "v " + String(battery.getPercent()) + "%";
+      //send(msgSirenLegacy.set(msg.c_str()));
+      sendBatteryLevel(battery.getPercent());
       lastBatteryPercent = battery.getPercent();
     }
 
