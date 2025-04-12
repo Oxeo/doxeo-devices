@@ -1,7 +1,7 @@
 #define MY_DEBUG
-//#define DHT_SENSOR
+// #define DHT_SENSOR
 #define PIR
-//#define RF
+// #define RF
 
 #define MY_RADIO_RF24
 #define MY_RX_MESSAGE_BUFFER_FEATURE
@@ -17,6 +17,7 @@
 #define POWER_PROBE_PIN A6
 #define DHT_PIN 4
 #define PIR_PIN A2
+#define BUZZER_PIN A3
 #define BUTTON1_PIN 5
 #define BUTTON2_PIN 6
 #define RF_PIN 3
@@ -29,9 +30,9 @@
 #endif
 
 // Includes
+#include <Bounce2.h>
 #include <MySensors.h>
 #include <Parser.h>
-#include <Bounce2.h>
 #include <Timer.h>
 
 // Child ID
@@ -40,13 +41,29 @@
 #define CHILD_ID_TEMP 2
 #define CHILD_ID_PIR 3
 #define CHILD_ID_RF 4
+#define CHILD_ID_SIREN_START_STOP 5
+#define CHILD_ID_CONFIG_SOUND_LEVEL 6
+#define CHILD_ID_CONFIG_BIP_NUMBER 7
+#define CHILD_ID_BUZZER 8
+#define CHILD_ID_RED_LED 9
+
+// Define EEPROM addresses
+#define EEPROM_SOUND_LEVEL 0  // 1 byte storage
+#define EEPROM_BIP_NUMBER 1   // 1 byte storage
 
 // Siren
 MyMessage msgSiren(CHILD_ID_SIREN, V_CUSTOM);
+MyMessage msgSirenStartStop(CHILD_ID_SIREN_START_STOP, V_STATUS);
+MyMessage msgSoundLevel(CHILD_ID_CONFIG_SOUND_LEVEL, V_TEXT);
+MyMessage msgBipNumber(CHILD_ID_CONFIG_BIP_NUMBER, V_TEXT);
+MyMessage msgBuzzer(CHILD_ID_BUZZER, V_STATUS);
+MyMessage msgRedLed(CHILD_ID_RED_LED, V_STATUS);
 unsigned long _sirenTime = 0;
 int _sirenState = 0;
 byte _bipNumber = 0;
 byte _sirenLevel = 100;
+byte _soundLevelConfig = 100;
+byte _bipNumberConfig = 0;
 
 // DHT
 #if defined(DHT_SENSOR)
@@ -89,28 +106,40 @@ bool _isOnBattery = false;
 Parser parser = Parser(' ');
 Timer timer;
 unsigned long _heartbeatTime = 0;
+unsigned long _buzzerTimer = 0;
 
-void before()
-{
+void before() {
   pinMode(SIREN_PIN, OUTPUT);
   pinMode(POWER_PROBE_PIN, INPUT);
   pinMode(PIR_PIN, INPUT);
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
 
   stopSiren();
   setGreenLedOn(true);
   setRedLedOn(true);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  _soundLevelConfig = getSoundLevel();
+  if (_soundLevelConfig == 0 || _soundLevelConfig > 100) {
+    _soundLevelConfig = 100;  // Default sound level in percentage
+  }
+
+  _bipNumberConfig = getBipNumber();
+  if (_bipNumberConfig > 30) {
+    _bipNumberConfig = 0;  // Default bip number
+  }
 }
 
 void setup() {
-  randomSeed(analogRead(3)); // A3
+  randomSeed(analogRead(3));  // A3
   setRedLedOn(false);
 #if defined(DHT_SENSOR)
   dht.setup(DHT_PIN);
   sleep(dht.getMinimumSamplingPeriod());
 #endif
-  
+
 #if defined(RF)
   rcSwitch.enableReceive(digitalPinToInterrupt(RF_PIN));
 #endif
@@ -121,8 +150,8 @@ void setup() {
     keys[i]->interval(25);
   }
 
-  for (byte i=0; i<10; i++) {
-    if (i%2 == 0) {
+  for (byte i = 0; i < 10; i++) {
+    if (i % 2 == 0) {
       setGreenLedOn(false);
       setRedLedOn(true);
     } else {
@@ -132,24 +161,33 @@ void setup() {
     delay(100);
   }
 
+  send(msgSoundLevel.set(_soundLevelConfig));
+  send(msgBipNumber.set(_bipNumberConfig));
 
   send(msgSiren.set(F("system started")));
+  send(msgSirenStartStop.set(false));
+  send(msgBuzzer.set(false));
+  send(msgRedLed.set(false));
 
   setGreenLedOn(false);
   setRedLedOn(false);
 }
 
 void presentation() {
-  sendSketchInfo("Siren 2", "1.0");
-  present(CHILD_ID_SIREN, S_CUSTOM);
-  present(CHILD_ID_HUM, S_HUM);
-  present(CHILD_ID_TEMP, S_TEMP);
-  present(CHILD_ID_PIR, S_MOTION);
-  present(CHILD_ID_RF, S_CUSTOM);
+  sendSketchInfo("Siren 2", "1.1");
+  present(CHILD_ID_SIREN, S_CUSTOM, "Info");
+  present(CHILD_ID_HUM, S_HUM, "Humidity");
+  present(CHILD_ID_TEMP, S_TEMP, "Temperature");
+  present(CHILD_ID_PIR, S_MOTION, "Motion");
+  present(CHILD_ID_RF, S_CUSTOM, "Rf");
+  present(CHILD_ID_SIREN_START_STOP, S_BINARY, "Start/Stop siren");
+  present(CHILD_ID_CONFIG_SOUND_LEVEL, S_INFO, "Sound level (1 - 100)");
+  present(CHILD_ID_CONFIG_BIP_NUMBER, S_INFO, "Bip number (0 - 30)");
+  present(CHILD_ID_BUZZER, S_BINARY, "Buzzer");
+  present(CHILD_ID_RED_LED, S_BINARY, "Red led");
 }
 
-void receive(const MyMessage &myMsg)
-{
+void receive(const MyMessage& myMsg) {
   if (myMsg.type == V_CUSTOM && myMsg.sensor == 0) {
     parser.parse(myMsg.getString());
 
@@ -160,22 +198,67 @@ void receive(const MyMessage &myMsg)
     } else if (parser.isEqual(0, "stop")) {
       stopSiren();
       send(msgSiren.set(F("siren stopped by user")));
+      send(msgSirenStartStop.set(false));
     } else if (parser.isEqual(0, "start") && parser.get(1) != NULL && parser.get(2) != NULL) {
       startSiren(parser.getInt(1), parser.getInt(2));
       send(msgSiren.set(F("siren started")));
     } else {
       send(msgSiren.set(F("command invalid")));
     }
+  } else if (myMsg.sensor == CHILD_ID_SIREN_START_STOP && myMsg.type == V_STATUS) {
+    if (myMsg.getBool()) {
+      startSiren(_bipNumberConfig, _soundLevelConfig);
+    } else {
+      stopSiren();
+    }
+  } else if (myMsg.sensor == CHILD_ID_CONFIG_SOUND_LEVEL && myMsg.type == V_TEXT) {
+    char* endPtr;
+    unsigned long soundLevel = strtoul(myMsg.getString(), &endPtr, 10);
+
+    if (*endPtr == '\0' && soundLevel > 0 && soundLevel <= 100) {
+      _soundLevelConfig = (byte)soundLevel;
+      saveSoundLevel(_soundLevelConfig);
+      send(msgSoundLevel.set(_soundLevelConfig));
+    } else {
+      send(msgSoundLevel.set("invalid"));
+    }
+  } else if (myMsg.sensor == CHILD_ID_CONFIG_BIP_NUMBER && myMsg.type == V_TEXT) {
+    char* endPtr;
+    unsigned long bipNumber = strtoul(myMsg.getString(), &endPtr, 10);
+
+    if (*endPtr == '\0' && bipNumber <= 30) {
+      _bipNumberConfig = (byte)bipNumber;
+      saveBipNumber(_bipNumberConfig);
+      send(msgBipNumber.set(_bipNumberConfig));
+    } else {
+      send(msgBipNumber.set("invalid"));
+    }
+  } else if (myMsg.sensor == CHILD_ID_BUZZER && myMsg.type == V_STATUS) {
+    if (myMsg.getBool()) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      _buzzerTimer = millis();
+    } else {
+      digitalWrite(BUZZER_PIN, LOW);
+      _buzzerTimer = 0;
+    }
+  } else if (myMsg.sensor == CHILD_ID_RED_LED && myMsg.type == V_STATUS) {
+    setRedLedOn(myMsg.getBool());
   }
 }
 
 void loop() {
   manageSiren();
-  //managePowerProbe();
+  // managePowerProbe();
   manageDhtSensor();
   managePirSensor();
   manageRfReceptor();
   manageButtons();
+
+  if (_buzzerTimer > 0 && millis() - _buzzerTimer >= 60000) {
+    digitalWrite(BUZZER_PIN, LOW); // stop buzzer
+    _buzzerTimer = 0;
+    send(msgBuzzer.set(false));
+  }
 
   manageHeartbeat();
   timer.update();
@@ -231,7 +314,7 @@ inline void manageButtons() {
     }
   }
 
-  if (_passwordPosition !=0 && millis() - _keyboardEnableTime >= 2000) {
+  if (_passwordPosition != 0 && millis() - _keyboardEnableTime >= 2000) {
     _passwordPosition = 0;
   }
 }
@@ -240,13 +323,13 @@ inline void manageDhtSensor() {
 #if defined(DHT_SENSOR)
   if ((millis() - lastSendTemperatureTime) >= 600000) {
     lastSendTemperatureTime = millis();
-    dht.readSensor(true); // Force reading sensor, so it works also after sleep
-    
+    dht.readSensor(true);  // Force reading sensor, so it works also after sleep
+
     float temperature = dht.getTemperature();
     if (!isnan(temperature)) {
       send(msgTemp.set(temperature, 1));
     }
-    
+
     float humidity = dht.getHumidity();
     if (!isnan(humidity)) {
       send(msgHum.set(humidity, 1));
@@ -290,7 +373,7 @@ inline void managePowerProbe() {
   }
 }
 
-void startSiren(char bipBumber, char level) {
+void startSiren(byte bipBumber, byte level) {
   _bipNumber = bipBumber;
   _sirenLevel = level;
   _sirenTime = 0;
@@ -318,10 +401,11 @@ inline void manageSiren() {
       stopSirenSound();
       _sirenTime = millis();
       _sirenState++;
-    } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 60000) {
-      DEBUG_PRINT(F("Siren stopped after 60s!"));
+    } else if ((_sirenState == _bipNumber * 2 + 2) && millis() - _sirenTime >= 180000) {
+      DEBUG_PRINT(F("Siren stopped after 180s!"));
       stopSiren();
       send(msgSiren.set(F("siren stopped")));
+      send(msgSirenStartStop.set(false));
     }
   }
 }
@@ -351,26 +435,26 @@ void setRedLedOn(bool on) {
 }
 
 inline void manageHeartbeat() {
-  static unsigned long _heartbeatLastSend = 0;
-  static unsigned long _heartbeatWait = random(1000, 60000);
-  static unsigned long _heartbeatRetryNb = 0;
+  static unsigned long heartbeatTime = 0;
 
-  if (millis() - _heartbeatLastSend >= _heartbeatWait) {
-    bool success = sendHeartbeat();
-
-    if (success) {
-      _heartbeatWait = 60000;
-      _heartbeatRetryNb = 0;
-    } else {
-      if (_heartbeatRetryNb < 10) {
-        _heartbeatWait = random(100, 3000);
-        _heartbeatRetryNb++;
-      } else {
-        _heartbeatWait = random(45000, 60000);
-        _heartbeatRetryNb = 0;
-      }
-    }
-    
-    _heartbeatLastSend = millis();
+  if (millis() - heartbeatTime >= 3600000) {
+    sendHeartbeat();
+    heartbeatTime = millis();
   }
+}
+
+void saveSoundLevel(byte value) {
+  saveState(EEPROM_SOUND_LEVEL, value);
+}
+
+byte getSoundLevel() {
+  return loadState(EEPROM_SOUND_LEVEL);
+}
+
+void saveBipNumber(byte value) {
+  saveState(EEPROM_BIP_NUMBER, value);
+}
+
+byte getBipNumber() {
+  return loadState(EEPROM_BIP_NUMBER);
 }
